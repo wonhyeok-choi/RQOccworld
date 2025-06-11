@@ -16,8 +16,6 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from torch.utils.tensorboard import SummaryWriter
-import apex
-# from apex import amp
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -105,9 +103,6 @@ def main(local_rank, args):
             device_ids=[torch.cuda.current_device()],
             broadcast_buffers=False,
             find_unused_parameters=find_unused_parameters)
-        # ddp_model_module = apex.parallel.DistributedDataParallel
-        # my_model = ddp_model_module(
-        #     my_model.cuda())
         raw_model = my_model.module
     else:
         my_model = my_model.cuda()

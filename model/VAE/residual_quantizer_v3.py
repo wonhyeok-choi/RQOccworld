@@ -60,7 +60,7 @@ class ResidualVectorQuantizerV3(BaseModule):
         return quant_list, residual_list, code_list
 
     def get_soft_codes(self, z, temp=1.0, stochastic=False):
-        z = rearrange(z, 'b c h w -> b h w c').contiguous()
+        z = rearrange(z, 'b c h w -> b h w c')
         residual_feature = z.detach().clone()
 
         residual_list = []
@@ -78,13 +78,16 @@ class ResidualVectorQuantizerV3(BaseModule):
                 code = code.reshape(*soft_code.shape[:-1])
             else:
                 code = distances.argmin(dim=-1)
+                # print("code:", code)
+                # print("code unique:", torch.unique(code))
+                # print("code.shape:", code.shape)
             quantize = codebook.embed(code)
 
             residual_feature.sub_(quantize)
 
             residual_list.append(quantize.detach().clone())
             code_list.append(code.detach().clone())
-            soft_code_list.append(soft_code)
+            soft_code_list.append(soft_code.detach().clone())
 
         return residual_list, code_list, soft_code_list
 
