@@ -653,9 +653,13 @@ class PlanUAutoRegTransformerResidual(BaseModule):
         self.pose_attn_layers = pose_attn_layers if pose_attn_layers is not None else temporal_attn_layers
         
         self.temporal_attentions_en = nn.ModuleList([])
+        self.temporal_attentions_en2 = nn.ModuleList([])
+        self.temporal_attentions_en3 = nn.ModuleList([])
+        self.temporal_attentions_en4 = nn.ModuleList([])
         self.temporal_attentions_de = nn.ModuleList([])
-        self.depth_attentions_en = nn.ModuleList([])
-        self.depth_attentions_de = nn.ModuleList([])
+        self.temporal_attentions_de2 = nn.ModuleList([])
+        self.temporal_attentions_de3 = nn.ModuleList([])
+        self.temporal_attentions_de4 = nn.ModuleList([])
         self.encoders = nn.ModuleList()
         self.decoders = nn.ModuleList()
         
@@ -687,8 +691,10 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             Ws.append(cW)
         pre_c = C
         for channel, cH, cW in zip(channels[0:-1], Hs[0:-1], Ws[0:-1]):
-            depth_attn_layer = nn.ModuleList()
             temporal_attn_layer = nn.ModuleList()
+            temporal_attn_layer2 = nn.ModuleList()
+            temporal_attn_layer3 = nn.ModuleList()
+            temporal_attn_layer4 = nn.ModuleList()
             for i in range(temporal_attn_layers):
                 if without_temporal_attn:
                     temporal_attn_layer.append(nn.ModuleList([
@@ -697,7 +703,19 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                         Identity(),
                         nn.LayerNorm(pre_c),
                     ]))
-                    depth_attn_layer.append(nn.ModuleList([
+                    temporal_attn_layer2.append(nn.ModuleList([
+                        Identity(),
+                        nn.LayerNorm(pre_c),
+                        Identity(),
+                        nn.LayerNorm(pre_c),
+                    ]))
+                    temporal_attn_layer3.append(nn.ModuleList([
+                        Identity(),
+                        nn.LayerNorm(pre_c),
+                        Identity(),
+                        nn.LayerNorm(pre_c),
+                    ]))
+                    temporal_attn_layer4.append(nn.ModuleList([
                         Identity(),
                         nn.LayerNorm(pre_c),
                         Identity(),
@@ -710,14 +728,28 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                         FFN(pre_c, pre_c*4),
                         nn.LayerNorm(pre_c)
                     ]))
-                    depth_attn_layer.append(nn.ModuleList([
+                    temporal_attn_layer2.append(nn.ModuleList([
+                        nn.MultiheadAttention(pre_c, num_heads, batch_first=True),
+                        nn.LayerNorm(pre_c),
+                        FFN(pre_c, pre_c*4),
+                        nn.LayerNorm(pre_c)
+                    ]))
+                    temporal_attn_layer3.append(nn.ModuleList([
+                        nn.MultiheadAttention(pre_c, num_heads, batch_first=True),
+                        nn.LayerNorm(pre_c),
+                        FFN(pre_c, pre_c*4),
+                        nn.LayerNorm(pre_c)
+                    ]))
+                    temporal_attn_layer4.append(nn.ModuleList([
                         nn.MultiheadAttention(pre_c, num_heads, batch_first=True),
                         nn.LayerNorm(pre_c),
                         FFN(pre_c, pre_c*4),
                         nn.LayerNorm(pre_c)
                     ]))
             self.temporal_attentions_en.append(temporal_attn_layer)
-            self.depth_attentions_en.append(depth_attn_layer)
+            self.temporal_attentions_en2.append(temporal_attn_layer2)
+            self.temporal_attentions_en3.append(temporal_attn_layer3)
+            self.temporal_attentions_en4.append(temporal_attn_layer4)
             if without_spatial_attn:
                 self.encoders.append(nn.Sequential(IdentityUnetBlock((cH, cW), pre_c, channel), 
                                                    IdentityUnetBlock((cH, cW), channel, channel)))
@@ -792,7 +824,9 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             else:
                 self.upsamples.append(nn.ConvTranspose2d(pre_c, channel, **up_down_sample_params))
             temporal_attn_layer = nn.ModuleList()
-            depth_attn_layer = nn.ModuleList()
+            temporal_attn_layer2 = nn.ModuleList()
+            temporal_attn_layer3 = nn.ModuleList()
+            temporal_attn_layer4 = nn.ModuleList()
             for i in range(temporal_attn_layers):
                 if without_temporal_attn:
                     temporal_attn_layer.append(nn.ModuleList([
@@ -801,7 +835,19 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                         Identity(),
                         nn.LayerNorm(channel_agg),
                     ]))
-                    depth_attn_layer.append(nn.ModuleList([
+                    temporal_attn_layer2.append(nn.ModuleList([
+                        Identity(),
+                        nn.LayerNorm(channel_agg),
+                        Identity(),
+                        nn.LayerNorm(channel_agg),
+                    ]))
+                    temporal_attn_layer3.append(nn.ModuleList([
+                        Identity(),
+                        nn.LayerNorm(channel_agg),
+                        Identity(),
+                        nn.LayerNorm(channel_agg),
+                    ]))
+                    temporal_attn_layer4.append(nn.ModuleList([
                         Identity(),
                         nn.LayerNorm(channel_agg),
                         Identity(),
@@ -814,14 +860,28 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                         FFN(channel_agg, channel_agg*4),
                         nn.LayerNorm(channel_agg)
                     ]))
-                    depth_attn_layer.append(nn.ModuleList([
+                    temporal_attn_layer2.append(nn.ModuleList([
+                        nn.MultiheadAttention(channel_agg, num_heads, batch_first=True),
+                        nn.LayerNorm(channel_agg),
+                        FFN(channel_agg, channel_agg*4),
+                        nn.LayerNorm(channel_agg)
+                    ]))
+                    temporal_attn_layer3.append(nn.ModuleList([
+                        nn.MultiheadAttention(channel_agg, num_heads, batch_first=True),
+                        nn.LayerNorm(channel_agg),
+                        FFN(channel_agg, channel_agg*4),
+                        nn.LayerNorm(channel_agg)
+                    ]))
+                    temporal_attn_layer4.append(nn.ModuleList([
                         nn.MultiheadAttention(channel_agg, num_heads, batch_first=True),
                         nn.LayerNorm(channel_agg),
                         FFN(channel_agg, channel_agg*4),
                         nn.LayerNorm(channel_agg)
                     ]))
             self.temporal_attentions_de.append(temporal_attn_layer)
-            self.depth_attentions_de.append(depth_attn_layer)
+            self.temporal_attentions_de2.append(temporal_attn_layer2)
+            self.temporal_attentions_de3.append(temporal_attn_layer3)
+            self.temporal_attentions_de4.append(temporal_attn_layer4)
             if without_spatial_attn:
                 self.decoders.append(nn.Sequential(
                     IdentityUnetBlock((channel_agg, cH,cW), channel_agg, channel, True),
@@ -901,23 +961,27 @@ class PlanUAutoRegTransformerResidual(BaseModule):
     def forward(self, tokens, res_tokens, pose_tokens=None):
         #import pdb;pdb.set_trace()
         # tokens: bs, f, c, h, w
-        # res_tokens: bs, f, c, h, w, d (cumsumed)
+        # res_tokens: bs, f, c, h, w, d (not cumsumed)
         # pose_tokens, bs, f, c
+        """ 
+        design motivation 1: r0부터 순차적으로 업데이트, residual 정보를 hierachical하게 업데이트한다.
+        design motivation 2: 업데이트된 residual을 더한 것을 updated token으로 사용해 consistency를 맞춘다.
+        """
         bs, F, C, H, W, D = res_tokens.shape
         assert F == self.num_frames
-        tokens = rearrange(res_tokens, 'b f c h w d -> b f d h w c')
-        queries = tokens
+        queries = rearrange(res_tokens, 'b f c h w d -> b f d h w c')
+        tokens = rearrange(res_tokens.sum(-1), 'b f c h w -> b f h w c')
         """ actually it is not temporal embedding -> temporal-depth embedding """
         queries = queries + self.temporal_embeddings.weight[None, self.offset:, None, None, None, :].expand(
             bs, -1, D, H, W, -1)
-        tokens = tokens + self.temporal_embeddings.weight[None, :self.num_frames, None, None, None, :].expand(
-            bs, -1, D, H, W, -1)
+        tokens = tokens + self.temporal_embeddings.weight[None, :self.num_frames, None, None, :].expand(
+            bs, -1, H, W, -1)
         queries = queries + self.depth_embeddings.weight[None, None, :, None, None, :].expand(
             bs, F, -1, H, W, -1)
-        tokens = tokens + self.depth_embeddings.weight[None, None, :, None, None, :].expand(
-            bs, F, -1, H, W, -1)
+        # tokens = tokens + self.depth_embeddings.weight[None, None, :, None, None, :].expand(
+        #     bs, F, -1, H, W, -1)
         queries = rearrange(queries, 'b f d h w c -> b f h w c d')
-        tokens = rearrange(tokens, 'b f d h w c -> b f h w c d')
+        # tokens = rearrange(tokens, 'b f d h w c -> b f h w c d')
         
         encoder_outs_pose_tokens = [None for _ in range(len(self.pose_attn_en))]
         encoder_outs_pose_queries = [None for _ in range(len(self.pose_attn_en))]
@@ -937,7 +1001,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
         encoder_outs_tokens = []
         encoder_outs_queries = []
         
-        for temporal_attn, depth_attn, encoder, down, pose_attn_en, pose_en in zip(self.temporal_attentions_en, self.depth_attentions_en, self.encoders, self.downsamples, self.pose_attn_en, self.pose_en):
+        for temporal_attn, temporal_attn2, temporal_attn3, temporal_attn4, encoder, down, pose_attn_en, pose_en in zip(self.temporal_attentions_en, self.temporal_attentions_en2, self.temporal_attentions_en3, self.temporal_attentions_en4, self.encoders, self.downsamples, self.pose_attn_en, self.pose_en):
             b, f, h, w, c, d = tokens.shape
             
             if pose_tokens is not None:
@@ -959,26 +1023,43 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 encoder_outs_pose_queries.append(pose_queries)
                 encoder_outs_pose_tokens.append(pose_tokens)
             
-            queries = rearrange(queries, 'b f h w c d -> (b h w d) f c')
-            tokens = rearrange(tokens, 'b f h w c d -> (b h w d) f c')
+            queries = rearrange(queries, 'b f h w c d -> (b h w) f c d')
+            tokens = rearrange(tokens, 'b f h w c -> (b h w) f c')
+            queries1 = queries[..., 0] # r1
+            queries2 = queries[..., 1] # r2
+            queries3 = queries[..., 2] # r3
+            queries4 = queries[..., 3] # r4
+            cumsumed = torch.cumsum(queries, dim=-1)
+            # cumsumed1 = cumsumed[..., 0] # r1
+            cumsumed2 = cumsumed[..., 1] # r1 + r2
+            cumsumed3 = cumsumed[..., 2] # r1 + r2 + r3
+            cumsumed4 = cumsumed[..., 3] # r1 + r2 + r3 + r4
+            # queries = rearrange(queries, 'b f h w c d -> (b h w d) f c')
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn:
-                queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=self.attn_mask)[0]
-                queries = cross_norm(queries)
-                
-                queries = queries + ffn(queries)
-                queries = ffn_norm(queries)
+                queries1 = queries1 + cross_attn(queries1, tokens, tokens, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries1 = cross_norm(queries1)
+                queries1 = queries1 + ffn(queries1)
+                queries1 = ffn_norm(queries1)
+            for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn2:
+                queries2 = queries2 + cross_attn(cumsumed2, queries1, queries1, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries2 = cross_norm(queries2)
+                queries2 = queries2 + ffn(queries2)
+                queries2 = ffn_norm(queries2)
+            for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn3:
+                queries3 = queries3 + cross_attn(cumsumed3, queries1+queries2, queries1+queries2, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries3 = cross_norm(queries3)
+                queries3 = queries3 + ffn(queries3)
+                queries3 = ffn_norm(queries3)
+            for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn4:
+                queries4 = queries4 + cross_attn(cumsumed4, queries1+queries2+queries3, queries1+queries2+queries3, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries4 = cross_norm(queries4)
+                queries4 = queries4 + ffn(queries4)
+                queries4 = ffn_norm(queries4)
+            queries = torch.stack([queries1, queries2, queries3, queries4], dim=-1) # (b h w) f c d
+            tokens = (queries1 + queries2 + queries3 + queries4).detach() # OPTIONAL, 미래 residual들을 다 더해서 token re-initialize
 
-            queries = rearrange(queries, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
-            tokens = rearrange(tokens, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
-            for cross_attn, cross_norm, ffn, ffn_norm in depth_attn:
-                queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=None)[0]
-                queries = cross_norm(queries)
-                
-                queries = queries + ffn(queries)
-                queries = ffn_norm(queries)
-
-            queries = rearrange(queries, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
-            tokens = rearrange(tokens, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
+            queries = rearrange(queries, '(b h w) f c d -> (b f d) c h w', b=b, h=h, w=w)
+            tokens = rearrange(tokens, '(b h w) f c -> (b f) c h w', b=b, h=h, w=w)
             queries = encoder(queries)
             tokens = encoder(tokens)
             encoder_outs_tokens.append(tokens)
@@ -986,11 +1067,11 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             queries = down(queries)
             tokens = down(tokens)
             queries = rearrange(queries, '(b f d) c h w -> b f h w c d', b=b, f=f, d=d)
-            tokens = rearrange(tokens, '(b f d) c h w -> b f h w c d', b=b, f=f, d=d) 
+            tokens = rearrange(tokens, '(b f) c h w -> b f h w c', b=b, f=f) 
 
         b, f, h, w, c, d = queries.shape
         queries = rearrange(queries, 'b f h w c d -> (b f d) c h w')
-        tokens = rearrange(tokens, 'b f h w c d -> (b f d) c h w')
+        tokens = rearrange(tokens, 'b f h w c -> (b f) c h w')
         queries = self.mid(queries)
         tokens = self.mid(tokens)
         
@@ -998,8 +1079,8 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             pose_queries = self.pose_mid(pose_queries)
             pose_tokens = self.pose_mid(pose_tokens)
         
-        for temporal_attn, depth_attn, decoder, up, encoder_out_queries, encoder_out_tokens, pose_attn_de, pose_de_, encoder_out_pose_queries, encoder_out_pose_tokens, pose_up \
-                                                                        in zip(self.temporal_attentions_de, self.depth_attentions_de,
+        for temporal_attn, temporal_attn2, temporal_attn3, temporal_attn4, decoder, up, encoder_out_queries, encoder_out_tokens, pose_attn_de, pose_de_, encoder_out_pose_queries, encoder_out_pose_tokens, pose_up \
+                                                                        in zip(self.temporal_attentions_de, self.temporal_attentions_de2, self.temporal_attentions_de3, self.temporal_attentions_de4,
                                                                         self.decoders, self.upsamples, encoder_outs_queries[::-1],
                                                                         encoder_outs_tokens[::-1], self.pose_attn_de, self.pose_de,
                                                                         encoder_outs_pose_queries[::-1], encoder_outs_pose_tokens[::-1], self.pose_up):
@@ -1017,26 +1098,43 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             queries = torch.cat([queries, encoder_out_queries], dim=1)
             tokens = torch.cat([tokens, encoder_out_tokens], dim=1)
             c, h, w = queries.shape[-3:]
-            queries = rearrange(queries, '(b f d) c h w -> (b h w d) f c', b=b, f=f, d=d)
-            tokens = rearrange(tokens, '(b f d) c h w -> (b h w d) f c', b=b, f=f, d=d)
+
+            queries = rearrange(queries, '(b f d) c h w -> (b h w) f c d', b=b, f=f, d=d)
+            tokens = rearrange(tokens, '(b f) c h w -> (b h w) f c', b=b, f=f)
+            queries1 = queries[..., 0] # r1
+            queries2 = queries[..., 1] # r2
+            queries3 = queries[..., 2] # r3
+            queries4 = queries[..., 3] # r4
+            cumsumed = torch.cumsum(queries, dim=-1)
+            # cumsumed1 = cumsumed[..., 0] # r1
+            cumsumed2 = cumsumed[..., 1] # r1 + r2
+            cumsumed3 = cumsumed[..., 2] # r1 + r2 + r3
+            cumsumed4 = cumsumed[..., 3] # r1 + r2 + r3 + r4
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn:
-                queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=self.attn_mask)[0]
-                queries = cross_norm(queries)
-                
-                queries = queries + ffn(queries)
-                queries = ffn_norm(queries)
+                queries1 = queries1 + cross_attn(queries1, tokens, tokens, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries1 = cross_norm(queries1)
+                queries1 = queries1 + ffn(queries1)
+                queries1 = ffn_norm(queries1)
+            for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn2:
+                queries2 = queries2 + cross_attn(cumsumed2, queries1, queries1, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries2 = cross_norm(queries2)
+                queries2 = queries2 + ffn(queries2)
+                queries2 = ffn_norm(queries2)
+            for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn3:
+                queries3 = queries3 + cross_attn(cumsumed3, queries1+queries2, queries1+queries2, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries3 = cross_norm(queries3)
+                queries3 = queries3 + ffn(queries3)
+                queries3 = ffn_norm(queries3)
+            for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn4:
+                queries4 = queries4 + cross_attn(cumsumed4, queries1+queries2+queries3, queries1+queries2+queries3, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries4 = cross_norm(queries4)
+                queries4 = queries4 + ffn(queries4)
+                queries4 = ffn_norm(queries4)
+            queries = torch.stack([queries1, queries2, queries3, queries4], dim=-1) # (b h w) f c d
+            tokens = (queries1 + queries2 + queries3 + queries4).detach() # OPTIONAL, 미래 residual들을 다 더해서 token re-initialize
 
-            queries = rearrange(queries, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
-            tokens = rearrange(tokens, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
-            for cross_attn, cross_norm, ffn, ffn_norm in depth_attn:
-                queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=None)[0]
-                queries = cross_norm(queries)
-                
-                queries = queries + ffn(queries)
-                queries = ffn_norm(queries)
-
-            queries = rearrange(queries, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
-            tokens = rearrange(tokens, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
+            queries = rearrange(queries, '(b h w) f c d -> (b f d) c h w', b=b, h=h, w=w)
+            tokens = rearrange(tokens, '(b h w) f c -> (b f) c h w', b=b, h=h, w=w)
             
             if pose_tokens is not None:
                 pose_queries = pose_up(pose_queries)
@@ -1062,8 +1160,8 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             tokens = decoder(tokens)
 
         # NOTE WE ALREADY attentioned across temporal and depth dimension
-        queries = self.conv_out(queries) # NOTE IDEA conv_out을 depth마다 각각 써보기? 요정도 IDEA2 causal mask 작은계단 
         """ TODO main IDEA2 spatial이 고려 안되있는데 이게 이유가 기존 occworld에서 temporal만해서 근데 rqvae에서 썼던 것처럼 초반에만 hw다듬어서 spatial_ctx만들어서 집어넣기? """
+        queries = self.conv_out(queries) # NOTE IDEA conv_out을 depth마다 각각 써보기? 요정도 IDEA2 causal mask 작은계단 
         queries = rearrange(queries, '(b f d) c h w -> b f d c h w', b=b, f=f, d=d)
         if pose_tokens is not None:
             pose_queries = self.pose_out(pose_queries)

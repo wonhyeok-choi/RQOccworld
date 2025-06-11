@@ -287,7 +287,8 @@ class TransRQVAEalign(BaseModule):
             residual_list[i] = rearrange(residual_list[i], '(b f) h w c -> b f c h w', b=bs, f=f)
 
         z_q_1 = torch.stack(residual_list, dim=-1).sum(-1) # b f c h w
-        res_tokens = torch.cumsum(torch.stack(residual_list, dim=-1), dim=-1) # b f c h w d
+        res_tokens = torch.stack(residual_list, dim=-1) # b f c h w d
+        # res_tokens = torch.cumsum(torch.stack(residual_list, dim=-1), dim=-1) # b f c h w d
         
         #############################################################
         z_q_1, rel_poses = self.transformer_1( # NOTE only FORECAST in this scale rough forecast and refine in upscaled features
@@ -320,7 +321,8 @@ class TransRQVAEalign(BaseModule):
             residual_list[i] = rearrange(residual_list[i], '(b f) h w c -> b f c h w', b=bs, f=f)
 
         z_q_1 = torch.stack(residual_list, dim=-1).sum(-1) # b f c h w
-        res_tokens = torch.cumsum(torch.stack(residual_list, dim=-1), dim=-1) # b f c h w d
+        res_tokens = torch.stack(residual_list, dim=-1) # b f c h w d
+        # res_tokens = torch.cumsum(torch.stack(residual_list, dim=-1), dim=-1) # b f c h w d
         
         #############################################################
         z_shape = z_q_1[:, :self.num_frames].shape
@@ -410,7 +412,8 @@ class TransRQVAEalign(BaseModule):
             residual_list[i] = rearrange(residual_list[i], '(b f) h w c -> b f c h w', b=bs, f=f)
 
         z_q_1 = torch.stack(residual_list, dim=-1).sum(-1) # b f c h w
-        res_tokens = torch.cumsum(torch.stack(residual_list, dim=-1), dim=-1) # b f c h w d
+        res_tokens = torch.stack(residual_list, dim=-1) # b f c h w d
+        # res_tokens = torch.cumsum(torch.stack(residual_list, dim=-1), dim=-1) # b f c h w d
         z_q_1_predict = z_q_1[:, start_frame:mid_frame]
         res_predict = res_tokens[:, start_frame:mid_frame]
 
@@ -473,7 +476,8 @@ class TransRQVAEalign(BaseModule):
             # temp_z_q_b_idx = self.sample_with_top_k_top_p_(z_q_b_[:, -1:].flatten(0, 1).detach().clone())
 
             z_q_1_ = quant_1.sum(-1)[:, -1:] # b 1 c h w
-            res_tokens = torch.cumsum(quant_1, dim=-1)[:, -1:] # b 1 c h w d
+            res_tokens = quant_1[:, -1:] # b 1 c h w d
+            # res_tokens = torch.cumsum(quant_1, dim=-1)[:, -1:] # b 1 c h w d
             """"""
             # TODO 여기부터 다시 작성할것
             """"""
