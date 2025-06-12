@@ -898,7 +898,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 attn_mask[start1: (start1 + num_tokens), start2:] = True
             self.register_buffer('attn_mask', attn_mask, False)
         depth_attn_mask = torch.zeros(num_frames * num_tokens * 4, num_frames * num_tokens * 4, dtype=torch.bool)
-        for i_frame in range(num_frames):
+        for i_frame in range(num_frames * 4):
             start1 = i_frame * num_tokens * 4
             start2 = start1 + num_tokens * 4 if conditional else start1
             attn_mask[start1: (start1 + num_tokens * 4), start2:] = True
