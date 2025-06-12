@@ -658,9 +658,11 @@ class PlanUAutoRegTransformerResidual(BaseModule):
         self.decoders = nn.ModuleList()
         
         self.pose_attn_en = nn.ModuleList([])
+        self.pose_to_occ_attn_en = nn.ModuleList([])
         self.pose_en = nn.ModuleList()
         #self.pose_temporal_attn_en = nn.ModuleList([])
         self.pose_attn_de = nn.ModuleList([])
+        self.pose_to_occ_attn_de = nn.ModuleList([])
         self.pose_de = nn.ModuleList()
         self.pose_up = nn.ModuleList()
         #self.pose_temporal_attn_de = nn.ModuleList([])
@@ -726,8 +728,10 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 nn.Linear(channel, channel),nn.ReLU(),
             ))
             pose_attn_layer = nn.ModuleList()
+            pose_to_occ_attn_layer = nn.ModuleList()
             for i in range(pose_attn_layers):
                 if without_pose_temporal_attn:
+                    assert 0
                     pose_attn_layer.append(nn.ModuleList([
                         Identity(),
                         nn.LayerNorm(pre_c),
@@ -737,6 +741,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                         nn.LayerNorm(pre_c)
                 ]))
                 elif without_pose_spatial_attn:
+                    assert 0
                     pose_attn_layer.append(nn.ModuleList([
                         nn.MultiheadAttention(pre_c, num_heads, batch_first=True),
                         nn.LayerNorm(pre_c),
@@ -754,7 +759,14 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                         FFN(pre_c, pre_c*4),
                         nn.LayerNorm(pre_c)
                     ]))
+                    pose_to_occ_attn_layer.append(nn.ModuleList([
+                        nn.MultiheadAttention(pre_c, num_heads, batch_first=True),
+                        nn.LayerNorm(pre_c),
+                        FFN(pre_c, pre_c*4),
+                        nn.LayerNorm(pre_c)
+                    ]))
             self.pose_attn_en.append(pose_attn_layer)
+            self.pose_to_occ_attn_en.append(pose_to_occ_attn_layer)
             pre_c = channel
         channel = channels[-1]
         if without_multiscale:
@@ -818,6 +830,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                     )
                 )
             pose_attn_layer = nn.ModuleList()
+            pose_to_occ_attn_layer = nn.ModuleList()
             self.pose_up.append(nn.Linear(pre_c, channel))
             for i in range(pose_attn_layers):
                 if without_pose_temporal_attn:
@@ -847,7 +860,14 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                         FFN(channel_agg, channel_agg*4),
                         nn.LayerNorm(channel_agg)
                     ]))
+                    pose_to_occ_attn_layer.append(nn.ModuleList([
+                        nn.MultiheadAttention(pre_c, num_heads, batch_first=True),
+                        nn.LayerNorm(pre_c),
+                        FFN(pre_c, pre_c*4),
+                        nn.LayerNorm(pre_c)
+                    ]))
             self.pose_attn_de.append(pose_attn_layer)
+            self.pose_to_occ_attn_de.append(pose_to_occ_attn_layer)
             self.pose_de.append(nn.Sequential(
                 nn.Linear(channel_agg, channel),nn.ReLU(),
                 nn.Linear(channel, channel),nn.ReLU(),
@@ -966,7 +986,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
         encoder_outs_tokens = []
         encoder_outs_queries = []
         
-        for temporal_attn, encoder, down, pose_attn_en, pose_en in zip(self.temporal_attentions_en, self.encoders, self.downsamples, self.pose_attn_en, self.pose_en):
+        for temporal_attn, encoder, down, pose_attn_en, pose_to_occ_attn_en, pose_en in zip(self.temporal_attentions_en, self.encoders, self.downsamples, self.pose_attn_en, self.pose_to_occ_attn_en, self.pose_en):
             b, f, h, w, c, d = tokens.shape
             
             if pose_tokens is not None:
@@ -984,6 +1004,18 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                     pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
                     queries = rearrange(queries, '(b f) (h w d) c -> b f h w c d', b=b, f=f, h=h, w=w, d=d)
                     # queries = rearrange(queries, '(b f) (h w) c -> b f h w c', b=b, f=f, h=h, w=w)
+                
+                for spatial_attn, spatial_norm, ffn, ffn_norm in pose_to_occ_attn_en:
+                    pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
+                    queries = rearrange(queries, 'b f h w c d -> (b f) (h w d) c')
+
+                    queries = queries + spatial_attn(queries, pose_queries, pose_queries, need_weights=False, attn_mask=None)[0]
+                    queries = spatial_norm(queries)
+
+                    queries = queries + ffn(queries)
+                    queries = ffn_norm(queries)
+                    pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
+                    queries = rearrange(queries, '(b f) (h w d) c -> b f h w c d', b=b, f=f, h=h, w=w, d=d)
                     
                 pose_queries = pose_en(pose_queries)
                 pose_tokens = pose_en(pose_tokens)
@@ -1028,9 +1060,9 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             pose_queries = self.pose_mid(pose_queries)
             pose_tokens = self.pose_mid(pose_tokens)
         
-        for temporal_attn, decoder, up, encoder_out_queries, encoder_out_tokens, pose_attn_de, pose_de_, encoder_out_pose_queries, encoder_out_pose_tokens, pose_up in zip(self.temporal_attentions_de,
+        for temporal_attn, decoder, up, encoder_out_queries, encoder_out_tokens, pose_attn_de, pose_to_occ_attn_de, pose_de_, encoder_out_pose_queries, encoder_out_pose_tokens, pose_up in zip(self.temporal_attentions_de,
                                                                         self.decoders, self.upsamples, encoder_outs_queries[::-1],
-                                                                        encoder_outs_tokens[::-1], self.pose_attn_de, self.pose_de,
+                                                                        encoder_outs_tokens[::-1], self.pose_attn_de, self.pose_to_occ_attn_de, self.pose_de,
                                                                         encoder_outs_pose_queries[::-1], encoder_outs_pose_tokens[::-1], self.pose_up):
             queries = up(queries)
             tokens = up(tokens)
@@ -1082,6 +1114,19 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                     queries = rearrange(queries, '(b f) (h w d) c -> (b f d) c h w', b=b, f=f, h=h, w=w, d=d)
                     # queries = rearrange(queries, '(b f) (h w) c -> (b f) c h w', b=b, f=f, h=h, w=w)
                     pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
+                
+                for spatial_attn, spatial_norm, ffn, ffn_norm in pose_to_occ_attn_de:
+                    pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
+                    queries = rearrange(queries, '(b f d) c h w -> (b f) (h w d) c', b=b, f=f, d=d)
+
+                    queries = queries + spatial_attn(queries, pose_queries, pose_queries, need_weights=False, attn_mask=None)[0]
+                    queries = spatial_norm(queries)
+
+                    queries = queries + ffn(queries)
+                    queries = ffn_norm(queries)
+                    pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
+                    queries = rearrange(queries, '(b f) (h w d) c -> (b f d) c h w', b=b, f=f, h=h, w=w, d=d)
+
                 pose_queries = pose_de_(pose_queries)
                 pose_tokens = pose_de_(pose_tokens)
             queries = decoder(queries)
@@ -1177,7 +1222,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
         encoder_outs_tokens = []
         encoder_outs_queries = []
         
-        for temporal_attn, encoder, down, pose_attn_en, pose_en in zip(self.temporal_attentions_en, self.encoders, self.downsamples, self.pose_attn_en, self.pose_en):
+        for temporal_attn, encoder, down, pose_attn_en, pose_to_occ_attn_en, pose_en in zip(self.temporal_attentions_en, self.encoders, self.downsamples, self.pose_attn_en, self.pose_to_occ_attn_en, self.pose_en):
             b, f, h, w, c, d = tokens.shape
             
             if pose_tokens is not None:
@@ -1191,6 +1236,18 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                     
                     pose_queries = pose_queries + ffn(pose_queries)
                     pose_queries = ffn_norm(pose_queries)
+                    pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
+                    queries = rearrange(queries, '(b f) (h w d) c -> b f h w c d', b=b, f=f, h=h, w=w, d=d)
+                
+                for spatial_attn, spatial_norm, ffn, ffn_norm in pose_to_occ_attn_en:
+                    pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
+                    queries = rearrange(queries, 'b f h w c d -> (b f) (h w d) c')
+
+                    queries = queries + spatial_attn(queries, pose_queries, pose_queries, need_weights=False, attn_mask=None)[0]
+                    queries = spatial_norm(queries)
+
+                    queries = queries + ffn(queries)
+                    queries = ffn_norm(queries)
                     pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
                     queries = rearrange(queries, '(b f) (h w d) c -> b f h w c d', b=b, f=f, h=h, w=w, d=d)
                     
@@ -1239,9 +1296,9 @@ class PlanUAutoRegTransformerResidual(BaseModule):
         
         # queries = rearrange(queries, '(b f) c h w -> b f h w c', b=b, f=f)
         # tokens = rearrange(tokens, '(b f) c h w -> b f h w c', b=b, f=f)
-        for temporal_attn, decoder, up, encoder_out_queries, encoder_out_tokens, pose_attn_de, pose_de_, encoder_out_pose_queries, encoder_out_pose_tokens, pose_up in zip(self.temporal_attentions_de,
+        for temporal_attn, decoder, up, encoder_out_queries, encoder_out_tokens, pose_attn_de, pose_to_occ_attn_de, pose_de_, encoder_out_pose_queries, encoder_out_pose_tokens, pose_up in zip(self.temporal_attentions_de,
                                                                         self.decoders, self.upsamples, encoder_outs_queries[::-1],
-                                                                        encoder_outs_tokens[::-1], self.pose_attn_de, self.pose_de,
+                                                                        encoder_outs_tokens[::-1], self.pose_attn_de, self.pose_to_occ_attn_de, self.pose_de,
                                                                         encoder_outs_pose_queries[::-1], encoder_outs_pose_tokens[::-1], self.pose_up):
             queries = up(queries)
             tokens = up(tokens)
@@ -1292,6 +1349,19 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                     queries = rearrange(queries, '(b f) (h w d) c -> (b f d) c h w', b=b, f=f, h=h, w=w, d=d)
                     # queries = rearrange(queries, '(b f) (h w) c -> (b f) c h w', b=b, f=f, h=h, w=w)
                     pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
+                
+                for spatial_attn, spatial_norm, ffn, ffn_norm in pose_to_occ_attn_de:
+                    pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
+                    queries = rearrange(queries, '(b f d) c h w -> (b f) (h w d) c', b=b, f=f, d=d)
+
+                    queries = queries + spatial_attn(queries, pose_queries, pose_queries, need_weights=False, attn_mask=None)[0]
+                    queries = spatial_norm(queries)
+
+                    queries = queries + ffn(queries)
+                    queries = ffn_norm(queries)
+                    pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
+                    queries = rearrange(queries, '(b f) (h w d) c -> (b f d) c h w', b=b, f=f, h=h, w=w, d=d)
+
                 pose_queries = pose_de_(pose_queries)
                 pose_tokens = pose_de_(pose_tokens)
             queries = decoder(queries)
