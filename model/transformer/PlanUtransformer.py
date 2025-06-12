@@ -897,6 +897,12 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 start2 = start1 + num_tokens if conditional else start1
                 attn_mask[start1: (start1 + num_tokens), start2:] = True
             self.register_buffer('attn_mask', attn_mask, False)
+        depth_attn_mask = torch.zeros(num_frames * num_tokens * 4, num_frames * num_tokens * 4, dtype=torch.bool)
+        for i_frame in range(num_frames):
+            start1 = i_frame * num_tokens * 4
+            start2 = start1 + num_tokens * 4 if conditional else start1
+            attn_mask[start1: (start1 + num_tokens * 4), start2:] = True
+        self.register_buffer('depth_attn_mask', depth_attn_mask, False)
     
     def forward(self, tokens, res_tokens, pose_tokens=None):
         #import pdb;pdb.set_trace()
@@ -968,17 +974,28 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 queries = queries + ffn(queries)
                 queries = ffn_norm(queries)
 
-            queries = rearrange(queries, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
-            tokens = rearrange(tokens, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
+            queries = rearrange(queries, '(b h w d) f c -> (b h w) (f d) c', b=b, h=h, w=w, d=d)
+            tokens = rearrange(tokens, '(b h w d) f c -> (b h w) (f d) c', b=b, h=h, w=w, d=d)
             for cross_attn, cross_norm, ffn, ffn_norm in depth_attn:
-                queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=None)[0]
+                queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=self.depth_attn_mask)[0]
                 queries = cross_norm(queries)
                 
                 queries = queries + ffn(queries)
                 queries = ffn_norm(queries)
+            queries = rearrange(queries, '(b h w) (f d) c -> (b f d) c h w', b=b, h=h, w=w, f=f, d=d)
+            tokens = rearrange(tokens, '(b h w) (f d) c -> (b f d) c h w', b=b, h=h, w=w, f=f, d=d)
 
-            queries = rearrange(queries, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
-            tokens = rearrange(tokens, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
+            # queries = rearrange(queries, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
+            # tokens = rearrange(tokens, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
+            # for cross_attn, cross_norm, ffn, ffn_norm in depth_attn:
+            #     queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=None)[0]
+            #     queries = cross_norm(queries)
+                
+            #     queries = queries + ffn(queries)
+            #     queries = ffn_norm(queries)
+            # queries = rearrange(queries, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
+            # tokens = rearrange(tokens, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
+
             queries = encoder(queries)
             tokens = encoder(tokens)
             encoder_outs_tokens.append(tokens)
@@ -1026,17 +1043,27 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 queries = queries + ffn(queries)
                 queries = ffn_norm(queries)
 
-            queries = rearrange(queries, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
-            tokens = rearrange(tokens, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
+            queries = rearrange(queries, '(b h w d) f c -> (b h w) (f d) c', b=b, h=h, w=w, d=d)
+            tokens = rearrange(tokens, '(b h w d) f c -> (b h w) (f d) c', b=b, h=h, w=w, d=d)
             for cross_attn, cross_norm, ffn, ffn_norm in depth_attn:
-                queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=None)[0]
+                queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=self.depth_attn_mask)[0]
                 queries = cross_norm(queries)
                 
                 queries = queries + ffn(queries)
                 queries = ffn_norm(queries)
+            queries = rearrange(queries, '(b h w) (f d) c -> (b f d) c h w', b=b, h=h, w=w, f=f, d=d)
+            tokens = rearrange(tokens, '(b h w) (f d) c -> (b f d) c h w', b=b, h=h, w=w, f=f, d=d)
 
-            queries = rearrange(queries, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
-            tokens = rearrange(tokens, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
+            # queries = rearrange(queries, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
+            # tokens = rearrange(tokens, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
+            # for cross_attn, cross_norm, ffn, ffn_norm in depth_attn:
+            #     queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=None)[0]
+            #     queries = cross_norm(queries)
+                
+            #     queries = queries + ffn(queries)
+            #     queries = ffn_norm(queries)
+            # queries = rearrange(queries, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
+            # tokens = rearrange(tokens, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
             
             if pose_tokens is not None:
                 pose_queries = pose_up(pose_queries)
@@ -1169,19 +1196,29 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 queries = queries + ffn(queries)
                 queries = ffn_norm(queries)
 
-            queries = rearrange(queries, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
-            tokens = rearrange(tokens, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
+            queries = rearrange(queries, '(b h w d) f c -> (b h w) (f d) c', b=b, h=h, w=w, d=d)
+            tokens = rearrange(tokens, '(b h w d) f c -> (b h w) (f d) c', b=b, h=h, w=w, d=d)
             for cross_attn, cross_norm, ffn, ffn_norm in depth_attn:
-                queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=None)[0]
+                queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=self.depth_attn_mask[:f*d, :f*d])[0]
                 queries = cross_norm(queries)
                 
                 queries = queries + ffn(queries)
                 queries = ffn_norm(queries)
+            queries = rearrange(queries, '(b h w) (f d) c -> (b f d) c h w', b=b, h=h, w=w, f=f, d=d)
+            tokens = rearrange(tokens, '(b h w) (f d) c -> (b f d) c h w', b=b, h=h, w=w, f=f, d=d)
+
+            # queries = rearrange(queries, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
+            # tokens = rearrange(tokens, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
+            # for cross_attn, cross_norm, ffn, ffn_norm in depth_attn:
+            #     queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=None)[0]
+            #     queries = cross_norm(queries)
+                
+            #     queries = queries + ffn(queries)
+            #     queries = ffn_norm(queries)
             
-            queries = rearrange(queries, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
-            tokens = rearrange(tokens, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
-            # queries = rearrange(queries, '(b h w) f c -> (b f) c h w', b=b, h=h, w=w)
-            # tokens = rearrange(tokens, '(b h w) f c -> (b f) c h w', b=b, h=h, w=w)
+            # queries = rearrange(queries, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
+            # tokens = rearrange(tokens, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
+
             queries = encoder(queries)
             tokens = encoder(tokens)
             encoder_outs_tokens.append(tokens)
@@ -1240,19 +1277,29 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 
                 queries = queries + ffn(queries)
                 queries = ffn_norm(queries)
-            queries = rearrange(queries, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
-            tokens = rearrange(tokens, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
+
+            queries = rearrange(queries, '(b h w d) f c -> (b h w) (f d) c', b=b, h=h, w=w, d=d)
+            tokens = rearrange(tokens, '(b h w d) f c -> (b h w) (f d) c', b=b, h=h, w=w, d=d)
             for cross_attn, cross_norm, ffn, ffn_norm in depth_attn:
-                queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=None)[0]
+                queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=self.depth_attn_mask[:f*d, :f*d])[0]
                 queries = cross_norm(queries)
                 
                 queries = queries + ffn(queries)
                 queries = ffn_norm(queries)
+            queries = rearrange(queries, '(b h w) (f d) c -> (b f d) c h w', b=b, h=h, w=w, f=f, d=d)
+            tokens = rearrange(tokens, '(b h w) (f d) c -> (b f d) c h w', b=b, h=h, w=w, f=f, d=d)
 
-            queries = rearrange(queries, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
-            tokens = rearrange(tokens, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
-            # queries = rearrange(queries, '(b h w) f c -> (b f) c h w', b=b, h=h, w=w)
-            # tokens = rearrange(tokens, '(b h w) f c -> (b f) c h w', b=b, h=h, w=w)
+            # queries = rearrange(queries, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
+            # tokens = rearrange(tokens, '(b h w d) f c -> (b h w f) d c', b=b, h=h, w=w, d=d)
+            # for cross_attn, cross_norm, ffn, ffn_norm in depth_attn:
+            #     queries = queries + cross_attn(queries, tokens, tokens, need_weights=False, attn_mask=None)[0]
+            #     queries = cross_norm(queries)
+                
+            #     queries = queries + ffn(queries)
+            #     queries = ffn_norm(queries)
+
+            # queries = rearrange(queries, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
+            # tokens = rearrange(tokens, '(b h w f) d c -> (b f d) c h w', b=b, h=h, w=w, f=f)
             
             if pose_tokens is not None:
                 pose_queries = pose_up(pose_queries)
