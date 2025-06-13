@@ -1011,7 +1011,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 queries = temporal_norm(queries)
 
                 pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
-                queries = rearrange(queries, '(b f d) c h w -> (b f) (h w d) c', b=b, f=f, d=d)
+                queries = rearrange(queries, '(b h w d) f c -> (b f) (h w d) c', b=b, h=h, w=w, d=d)
                 queries = queries + spatial_attn(queries, pose_queries, pose_queries, need_weights=False, attn_mask=None)[0]
                 queries = spatial_norm(queries)
 
@@ -1019,7 +1019,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 queries = ffn_norm(queries)
                 pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
                 queries = rearrange(queries, '(b f) (h w d) c -> (b f d) c h w', b=b, f=f, h=h, w=w, d=d)
-                tokens = rearrange(tokens, '(b h w d) f c -> (b f d) c h w', b=b, f=f, d=d)
+                tokens = rearrange(tokens, '(b h w d) f c -> (b f d) c h w', b=b, h=h, w=w, d=d)
             
             for pose_temporal_attn, pose_temporal_norm, spatial_attn, spatial_norm, ffn, ffn_norm in pose_attn_de:
                 pose_queries = pose_queries + pose_temporal_attn(pose_queries, pose_tokens, pose_tokens, need_weights=False, attn_mask=self.attn_mask)[0]
