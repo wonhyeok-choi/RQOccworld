@@ -1029,11 +1029,11 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             queries2 = queries[..., 1] # r2
             queries3 = queries[..., 2] # r3
             queries4 = queries[..., 3] # r4
-            cumsumed = torch.cumsum(queries, dim=-1)
+            # cumsumed = torch.cumsum(queries, dim=-1)
             # cumsumed1 = cumsumed[..., 0] # r1
-            cumsumed2 = cumsumed[..., 1] # r1 + r2
-            cumsumed3 = cumsumed[..., 2] # r1 + r2 + r3
-            cumsumed4 = cumsumed[..., 3] # r1 + r2 + r3 + r4
+            # cumsumed2 = cumsumed[..., 1] # r1 + r2
+            # cumsumed3 = cumsumed[..., 2] # r1 + r2 + r3
+            # cumsumed4 = cumsumed[..., 3] # r1 + r2 + r3 + r4
             # queries = rearrange(queries, 'b f h w c d -> (b h w d) f c')
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn:
                 queries1 = queries1 + cross_attn(queries1, tokens, tokens, need_weights=False, attn_mask=self.attn_mask)[0]
@@ -1041,22 +1041,22 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 queries1 = queries1 + ffn(queries1)
                 queries1 = ffn_norm(queries1)
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn2:
-                queries2 = queries2 + cross_attn(cumsumed2, queries1, queries1, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries2 = queries2 + cross_attn(queries2, queries1, queries1, need_weights=False, attn_mask=self.attn_mask)[0]
                 queries2 = cross_norm(queries2)
                 queries2 = queries2 + ffn(queries2)
                 queries2 = ffn_norm(queries2)
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn3:
-                queries3 = queries3 + cross_attn(cumsumed3, queries1+queries2, queries1+queries2, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries3 = queries3 + cross_attn(queries3, queries1+queries2, queries1+queries2, need_weights=False, attn_mask=self.attn_mask)[0]
                 queries3 = cross_norm(queries3)
                 queries3 = queries3 + ffn(queries3)
                 queries3 = ffn_norm(queries3)
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn4:
-                queries4 = queries4 + cross_attn(cumsumed4, queries1+queries2+queries3, queries1+queries2+queries3, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries4 = queries4 + cross_attn(queries4, queries1+queries2+queries3, queries1+queries2+queries3, need_weights=False, attn_mask=self.attn_mask)[0]
                 queries4 = cross_norm(queries4)
                 queries4 = queries4 + ffn(queries4)
                 queries4 = ffn_norm(queries4)
             queries = torch.stack([queries1, queries2, queries3, queries4], dim=-1) # (b h w) f c d
-            tokens = (queries1 + queries2 + queries3 + queries4).detach() # OPTIONAL, 미래 residual들을 다 더해서 token re-initialize
+            # tokens = (queries1 + queries2 + queries3 + queries4).detach() # OPTIONAL, 미래 residual들을 다 더해서 token re-initialize
 
             queries = rearrange(queries, '(b h w) f c d -> (b f d) c h w', b=b, h=h, w=w)
             tokens = rearrange(tokens, '(b h w) f c -> (b f) c h w', b=b, h=h, w=w)
@@ -1105,33 +1105,33 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             queries2 = queries[..., 1] # r2
             queries3 = queries[..., 2] # r3
             queries4 = queries[..., 3] # r4
-            cumsumed = torch.cumsum(queries, dim=-1)
+            # cumsumed = torch.cumsum(queries, dim=-1)
             # cumsumed1 = cumsumed[..., 0] # r1
-            cumsumed2 = cumsumed[..., 1] # r1 + r2
-            cumsumed3 = cumsumed[..., 2] # r1 + r2 + r3
-            cumsumed4 = cumsumed[..., 3] # r1 + r2 + r3 + r4
+            # cumsumed2 = cumsumed[..., 1] # r1 + r2
+            # cumsumed3 = cumsumed[..., 2] # r1 + r2 + r3
+            # cumsumed4 = cumsumed[..., 3] # r1 + r2 + r3 + r4
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn:
                 queries1 = queries1 + cross_attn(queries1, tokens, tokens, need_weights=False, attn_mask=self.attn_mask)[0]
                 queries1 = cross_norm(queries1)
                 queries1 = queries1 + ffn(queries1)
                 queries1 = ffn_norm(queries1)
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn2:
-                queries2 = queries2 + cross_attn(cumsumed2, queries1, queries1, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries2 = queries2 + cross_attn(queries2, queries1, queries1, need_weights=False, attn_mask=self.attn_mask)[0]
                 queries2 = cross_norm(queries2)
                 queries2 = queries2 + ffn(queries2)
                 queries2 = ffn_norm(queries2)
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn3:
-                queries3 = queries3 + cross_attn(cumsumed3, queries1+queries2, queries1+queries2, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries3 = queries3 + cross_attn(queries3, queries1+queries2, queries1+queries2, need_weights=False, attn_mask=self.attn_mask)[0]
                 queries3 = cross_norm(queries3)
                 queries3 = queries3 + ffn(queries3)
                 queries3 = ffn_norm(queries3)
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn4:
-                queries4 = queries4 + cross_attn(cumsumed4, queries1+queries2+queries3, queries1+queries2+queries3, need_weights=False, attn_mask=self.attn_mask)[0]
+                queries4 = queries4 + cross_attn(queries4, queries1+queries2+queries3, queries1+queries2+queries3, need_weights=False, attn_mask=self.attn_mask)[0]
                 queries4 = cross_norm(queries4)
                 queries4 = queries4 + ffn(queries4)
                 queries4 = ffn_norm(queries4)
             queries = torch.stack([queries1, queries2, queries3, queries4], dim=-1) # (b h w) f c d
-            tokens = (queries1 + queries2 + queries3 + queries4).detach() # OPTIONAL, 미래 residual들을 다 더해서 token re-initialize
+            # tokens = (queries1 + queries2 + queries3 + queries4).detach() # OPTIONAL, 미래 residual들을 다 더해서 token re-initialize
 
             queries = rearrange(queries, '(b h w) f c d -> (b f d) c h w', b=b, h=h, w=w)
             tokens = rearrange(tokens, '(b h w) f c -> (b f) c h w', b=b, h=h, w=w)
@@ -1257,32 +1257,32 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             queries2 = queries[..., 1] # r2
             queries3 = queries[..., 2] # r3
             queries4 = queries[..., 3] # r4
-            cumsumed = torch.cumsum(queries, dim=-1)
-            cumsumed2 = cumsumed[..., 1] # r1 + r2
-            cumsumed3 = cumsumed[..., 2] # r1 + r2 + r3
-            cumsumed4 = cumsumed[..., 3] # r1 + r2 + r3 + r4
+            # cumsumed = torch.cumsum(queries, dim=-1)
+            # cumsumed2 = cumsumed[..., 1] # r1 + r2
+            # cumsumed3 = cumsumed[..., 2] # r1 + r2 + r3
+            # cumsumed4 = cumsumed[..., 3] # r1 + r2 + r3 + r4
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn:
                 queries1 = queries1 + cross_attn(queries1, tokens, tokens, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
                 queries1 = cross_norm(queries1)
                 queries1 = queries1 + ffn(queries1)
                 queries1 = ffn_norm(queries1)
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn2:
-                queries2 = queries2 + cross_attn(cumsumed2, queries1, queries1, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
+                queries2 = queries2 + cross_attn(queries2, queries1, queries1, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
                 queries2 = cross_norm(queries2)
                 queries2 = queries2 + ffn(queries2)
                 queries2 = ffn_norm(queries2)
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn3:
-                queries3 = queries3 + cross_attn(cumsumed3, queries1+queries2, queries1+queries2, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
+                queries3 = queries3 + cross_attn(queries3, queries1+queries2, queries1+queries2, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
                 queries3 = cross_norm(queries3)
                 queries3 = queries3 + ffn(queries3)
                 queries3 = ffn_norm(queries3)
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn4:
-                queries4 = queries4 + cross_attn(cumsumed4, queries1+queries2+queries3, queries1+queries2+queries3, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
+                queries4 = queries4 + cross_attn(queries4, queries1+queries2+queries3, queries1+queries2+queries3, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
                 queries4 = cross_norm(queries4)
                 queries4 = queries4 + ffn(queries4)
                 queries4 = ffn_norm(queries4)
             queries = torch.stack([queries1, queries2, queries3, queries4], dim=-1) # (b h w) f c d
-            tokens = (queries1 + queries2 + queries3 + queries4).detach() # OPTIONAL, 미래 residual들을 다 더해서 token re-initialize
+            # tokens = (queries1 + queries2 + queries3 + queries4).detach() # OPTIONAL, 미래 residual들을 다 더해서 token re-initialize
             
             queries = rearrange(queries, '(b h w) f c d -> (b f d) c h w', b=b, h=h, w=w)
             tokens = rearrange(tokens, '(b h w) f c -> (b f) c h w', b=b, h=h, w=w)
@@ -1343,33 +1343,33 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             queries2 = queries[..., 1] # r2
             queries3 = queries[..., 2] # r3
             queries4 = queries[..., 3] # r4
-            cumsumed = torch.cumsum(queries, dim=-1)
+            # cumsumed = torch.cumsum(queries, dim=-1)
             # cumsumed1 = cumsumed[..., 0] # r1
-            cumsumed2 = cumsumed[..., 1] # r1 + r2
-            cumsumed3 = cumsumed[..., 2] # r1 + r2 + r3
-            cumsumed4 = cumsumed[..., 3] # r1 + r2 + r3 + r4
+            # cumsumed2 = cumsumed[..., 1] # r1 + r2
+            # cumsumed3 = cumsumed[..., 2] # r1 + r2 + r3
+            # cumsumed4 = cumsumed[..., 3] # r1 + r2 + r3 + r4
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn:
                 queries1 = queries1 + cross_attn(queries1, tokens, tokens, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
                 queries1 = cross_norm(queries1)
                 queries1 = queries1 + ffn(queries1)
                 queries1 = ffn_norm(queries1)
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn2:
-                queries2 = queries2 + cross_attn(cumsumed2, queries1, queries1, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
+                queries2 = queries2 + cross_attn(queries2, queries1, queries1, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
                 queries2 = cross_norm(queries2)
                 queries2 = queries2 + ffn(queries2)
                 queries2 = ffn_norm(queries2)
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn3:
-                queries3 = queries3 + cross_attn(cumsumed3, queries1+queries2, queries1+queries2, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
+                queries3 = queries3 + cross_attn(queries3, queries1+queries2, queries1+queries2, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
                 queries3 = cross_norm(queries3)
                 queries3 = queries3 + ffn(queries3)
                 queries3 = ffn_norm(queries3)
             for cross_attn, cross_norm, ffn, ffn_norm in temporal_attn4:
-                queries4 = queries4 + cross_attn(cumsumed4, queries1+queries2+queries3, queries1+queries2+queries3, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
+                queries4 = queries4 + cross_attn(queries4, queries1+queries2+queries3, queries1+queries2+queries3, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
                 queries4 = cross_norm(queries4)
                 queries4 = queries4 + ffn(queries4)
                 queries4 = ffn_norm(queries4)
             queries = torch.stack([queries1, queries2, queries3, queries4], dim=-1) # (b h w) f c d
-            tokens = (queries1 + queries2 + queries3 + queries4).detach() # OPTIONAL, 미래 residual들을 다 더해서 token re-initialize
+            # tokens = (queries1 + queries2 + queries3 + queries4).detach() # OPTIONAL, 미래 residual들을 다 더해서 token re-initialize
 
             queries = rearrange(queries, '(b h w) f c d -> (b f d) c h w', b=b, h=h, w=w)
             tokens = rearrange(tokens, '(b h w) f c -> (b f) c h w', b=b, h=h, w=w)

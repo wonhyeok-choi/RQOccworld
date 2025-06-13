@@ -162,7 +162,7 @@ model = dict(
         pose_output_channel=base_channel*2,
         tpe_dim=base_channel*2, # base_channel*2,
         channels=(base_channel*2, base_channel*4, base_channel*8),
-        temporal_attn_layers=1, # 6
+        temporal_attn_layers=2, # 6
         output_channel=n_e_, 
         learnable_queries=False
     ),
