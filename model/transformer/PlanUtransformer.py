@@ -946,12 +946,12 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 queries = queries + temporal_attn(queries, tokens, tokens, need_weights=False, attn_mask=self.attn_mask)[0]
                 queries = temporal_norm(queries)
 
-                queries = rearrange(queries, '(b h w d) f c -> (b f d) (h w) c', b=b, h=h, w=w, d=d)
+                queries = rearrange(queries, '(b h w d) f c -> (b f) (h w d) c', b=b, h=h, w=w, d=d)
                 pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
                 queries = queries + spatial_attn(queries, pose_queries, pose_queries, need_weights=False, attn_mask=None)[0]
                 queries = spatial_norm(queries)
 
-                queries = rearrange(queries, '(b f d) (h w) c -> (b f h w) d c', b=b, f=f, d=d, h=h, w=w)
+                queries = rearrange(queries, '(b f) (h w d) c -> (b f h w) d c', b=b, f=f, h=h, w=w, d=d)
                 tokens = rearrange(tokens, '(b h w d) f c -> (b f h w) d c', b=b, h=h, w=w, d=d)
                 queries = queries + depth_attn(queries, tokens, tokens, need_weights=False, attn_mask=None)[0]
                 queries = depth_norm(queries)
@@ -1018,12 +1018,12 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 queries = queries + temporal_attn(queries, tokens, tokens, need_weights=False, attn_mask=self.attn_mask)[0]
                 queries = temporal_norm(queries)
 
-                queries = rearrange(queries, '(b h w d) f c -> (b f d) (h w) c', b=b, h=h, w=w, d=d)
+                queries = rearrange(queries, '(b h w d) f c -> (b f) (h w d) c', b=b, h=h, w=w, d=d)
                 pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
                 queries = queries + spatial_attn(queries, pose_queries, pose_queries, need_weights=False, attn_mask=None)[0]
                 queries = spatial_norm(queries)
 
-                queries = rearrange(queries, '(b f d) (h w) c -> (b f h w) d c', b=b, f=f, d=d, h=h, w=w)
+                queries = rearrange(queries, '(b f) (h w d) c -> (b f h w) d c', b=b, f=f, h=h, w=w, d=d)
                 tokens = rearrange(tokens, '(b h w d) f c -> (b f h w) d c', b=b, h=h, w=w, d=d)
                 queries = queries + depth_attn(queries, tokens, tokens, need_weights=False, attn_mask=None)[0]
                 queries = depth_norm(queries)
