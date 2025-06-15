@@ -1251,7 +1251,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             pose_queries = self.pose_out(pose_queries)
             return queries, pose_queries
         
-        return queries       
+        return queries
 
 
 class UnetBlock(nn.Module):
