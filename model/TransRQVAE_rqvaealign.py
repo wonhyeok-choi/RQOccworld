@@ -400,12 +400,7 @@ class TransRQVAEalign(BaseModule):
         output_dict['target_occs'] = x[:, mid_frame:end_frame] 
         # NOTE WONHYEOK: ADD MID SCALE
         final_quant, residual_list, code_list, shapes, out_shape = self.vae.encode(x) # [bs*f, H, W, 50], [bs*f, H, W]
-        # z_q_b, z_q_m, z_q_t, idx_b, idx_m, idx_t, shapes_b, out_shape = self.vae.encode(x) # [bs*f, H, W, 50], [bs*f, H, W] # NOTE ADDED
-        # z_q_b, z_q_t, idx_b, idx_t, shapes_b, out_shape = self.vae.encode(x) # [bs*f, H, W, 50], [bs*f, H, W]
         output_dict['ce_labels_1'] = torch.stack(code_list, dim=1)[mid_frame:end_frame].flatten(0, 1).detach() # bf'd h w
-        # output_dict['ce_labels_t'] = idx_t[mid_frame:end_frame].detach()
-        # output_dict['ce_labels_m'] = idx_m[mid_frame:end_frame].detach() # NOTE ADDED
-        # output_dict['ce_labels_b'] = idx_b[mid_frame:end_frame].detach()
         for i in range(len(residual_list)):
             residual_list[i] = rearrange(residual_list[i], '(b f) h w c -> b f c h w', b=bs, f=f)
 
@@ -448,8 +443,6 @@ class TransRQVAEalign(BaseModule):
         t2 = time.time()
         poses_ = []
         for i in range(mid_frame, end_frame):
-            ###########################################
-            # NOTE OPTION 2. residual + cascade + frame index align
             z_shape = z_q_1_predict.shape # (b f' 128 50 50)
             z_q_1_, rel_poses_= self.transformer_1.forward_autoreg_step( # NOTE only FORECAST in this scale rough forecast and refine in upscaled features
                 z_q_1_predict,
@@ -459,7 +452,6 @@ class TransRQVAEalign(BaseModule):
             idx_1 = torch.argmax(z_q_1_.flatten(0, 1).flatten(0, 1), dim=1) # bfd 50 50
             quant_1 = self.vae.vqvae.embed_code(idx_1).permute(0,3,1,2).view(*z_shape[:2], 4, *z_shape[2:]) # b f d, 128, 50, 50
             quant_1 = rearrange(quant_1, 'b f d c h w -> b f c h w d')
-            ###########################################
 
             z_q_1_list.append(z_q_1_[:, -1:]) # b 1 d c h w
             # z_q_1_list.append(z_q_m_[:, -1:]) # NOTE ADDED
