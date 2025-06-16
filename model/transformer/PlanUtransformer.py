@@ -646,6 +646,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             self.queries = nn.Embedding(img_shape[1]*img_shape[2], img_shape[0])
         self.offset = 1 if conditional else 0
         self.temporal_embeddings = nn.Embedding(num_frames + self.offset, tpe_dim)
+        self.spatial_embeddings = nn.Embedding(50 * 50, tpe_dim) # NOTE HARDCODED
         self.depth_embeddings = nn.Embedding(4, tpe_dim) # NOTE HARDCODED
         if self.learnable_queries:
             self.pose_queries = nn.Embedding(pose_shape[0], pose_shape[1])
@@ -658,14 +659,10 @@ class PlanUAutoRegTransformerResidual(BaseModule):
         self.decoders = nn.ModuleList()
         
         self.pose_attn_en = nn.ModuleList([])
-        # self.pose_to_occ_attn_en = nn.ModuleList([])
         self.pose_en = nn.ModuleList()
-        #self.pose_temporal_attn_en = nn.ModuleList([])
         self.pose_attn_de = nn.ModuleList([])
-        # self.pose_to_occ_attn_de = nn.ModuleList([])
         self.pose_de = nn.ModuleList()
         self.pose_up = nn.ModuleList()
-        #self.pose_temporal_attn_de = nn.ModuleList([])
         
         self.downsamples = nn.ModuleList()
         self.upsamples = nn.ModuleList()
@@ -886,23 +883,28 @@ class PlanUAutoRegTransformerResidual(BaseModule):
     def forward(self, tokens, res_tokens, pose_tokens):
         bs, F, C, H, W, D = res_tokens.shape
         assert F == self.num_frames
-        tokens = rearrange(res_tokens, 'b f c h w d -> b f d h w c')
+        tokens = rearrange(res_tokens, 'b f c h w d -> b f (h w) d c')
         queries = tokens
         """ actually it is not temporal embedding -> temporal-depth embedding """
         # NOTE temporal embedding
-        queries = queries + self.temporal_embeddings.weight[None, self.offset:, None, None, None, :].expand(
-            bs, -1, D, H, W, -1)
-        tokens = tokens + self.temporal_embeddings.weight[None, :self.num_frames, None, None, None, :].expand(
-            bs, -1, D, H, W, -1)
-        # NOTE TODO IDEA: add spatial embedding?
+        queries = queries + self.temporal_embeddings.weight[None, self.offset:, None, None, :].expand(
+            bs, -1, H*W, D, -1)
+        tokens = tokens + self.temporal_embeddings.weight[None, :self.num_frames, None, None, :].expand(
+            bs, -1, H*W, D, -1)
+        # NOTE TODO IDEA: add spatial embedding? # PROBLEM: REQUIRE 2500 X 128 space-complexity of nn.Embedding module
+        # NOTE 하지만 시도해볼만하다,,,,
+        queries = queries + self.spatial_embeddings.weight[None, None, :, None, :].expand(
+            bs, F, -1, D, -1)
+        tokens = tokens + self.spatial_embeddings.weight[None, None, :, None, :].expand(
+            bs, F, -1, D, -1)
         # NOTE depth embedding
-        queries = queries + self.depth_embeddings.weight[None, None, :, None, None, :].expand(
-            bs, F, -1, H, W, -1)
-        tokens = tokens + self.depth_embeddings.weight[None, None, :, None, None, :].expand(
-            bs, F, -1, H, W, -1)
+        queries = queries + self.depth_embeddings.weight[None, None, None, :, :].expand(
+            bs, F, H*W, -1, -1)
+        tokens = tokens + self.depth_embeddings.weight[None, None, None, :, :].expand(
+            bs, F, H*W, -1, -1)
 
-        queries = rearrange(queries, 'b f d h w c -> b f d c h w')
-        tokens = rearrange(tokens, 'b f d h w c -> b f d c h w')
+        queries = rearrange(queries, 'b f (h w) d c -> b f d c h w', h=H, w=W)
+        tokens = rearrange(tokens, 'b f (h w) d c -> b f d c h w', h=H, w=W)
 
         pose_queries = pose_tokens
         pose_queries = pose_queries + self.pose_temporal_embeddings.weight[None, self.offset:, :].expand(
@@ -919,7 +921,6 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             b, f, d, c, h, w = queries.shape
             queries = rearrange(queries, 'b f d c h w -> (b f d) c h w')
             tokens = rearrange(tokens, 'b f d c h w -> (b f d) c h w')
-            # b, f, h, w, c, d = tokens.shape
             
             for pose_temporal_attn, pose_temporal_norm, spatial_attn, spatial_norm, ffn, ffn_norm in pose_attn_en:
                 pose_queries = pose_queries + pose_temporal_attn(pose_queries, pose_tokens, pose_tokens, need_weights=False, attn_mask=self.attn_mask)[0]
@@ -1007,7 +1008,21 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             pose_queries = torch.cat([pose_queries, encoder_out_pose_queries], dim=2)
             pose_tokens = torch.cat([pose_tokens, encoder_out_pose_tokens], dim=2)
 
-            """ NOTE pose를 먼저 다듬고 queries를 하는 방식을 유지할 것인가? 아니면 symmetric 하게 원래처럼 할 것인가? -> 일단 symmetric을 따라서 구현해보자."""
+            # NOTE SWITCHED POSE and QUEIRES processing
+            for pose_temporal_attn, pose_temporal_norm, spatial_attn, spatial_norm, ffn, ffn_norm in pose_attn_de:
+                pose_queries = pose_queries + pose_temporal_attn(pose_queries, pose_tokens, pose_tokens, need_weights=False, attn_mask=self.attn_mask)[0]
+                pose_queries = pose_temporal_norm(pose_queries)
+                pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
+                queries = rearrange(queries, '(b f d) c h w -> (b f) (h w d) c', b=b, f=f, d=d)
+
+                pose_queries = pose_queries + spatial_attn(pose_queries, queries, queries, need_weights=False, attn_mask=None)[0]
+                pose_queries = spatial_norm(pose_queries)
+                
+                pose_queries = pose_queries + ffn(pose_queries)
+                pose_queries = ffn_norm(pose_queries)
+                pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
+                queries = rearrange(queries, '(b f) (h w d) c -> (b f d) c h w', b=b, f=f, h=h, w=w, d=d)
+
             for temporal_attn, temporal_norm, spatial_attn, spatial_norm, depth_attn, depth_norm, ffn, ffn_norm in occ_attn_de:
                 queries = rearrange(queries, '(b f d) c h w -> (b h w d) f c', b=b, f=f, d=d)
                 tokens = rearrange(tokens, '(b f d) c h w -> (b h w d) f c', b=b, f=f, d=d)
@@ -1029,20 +1044,6 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
                 queries = rearrange(queries, '(b f h w) d c -> (b f d) c h w', b=b, f=f, h=h, w=w)
                 tokens = rearrange(tokens, '(b f h w) d c -> (b f d) c h w', b=b, f=f, h=h, w=w)
-            
-            for pose_temporal_attn, pose_temporal_norm, spatial_attn, spatial_norm, ffn, ffn_norm in pose_attn_de:
-                pose_queries = pose_queries + pose_temporal_attn(pose_queries, pose_tokens, pose_tokens, need_weights=False, attn_mask=self.attn_mask)[0]
-                pose_queries = pose_temporal_norm(pose_queries)
-                pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
-                queries = rearrange(queries, '(b f d) c h w -> (b f) (h w d) c', b=b, f=f, d=d)
-
-                pose_queries = pose_queries + spatial_attn(pose_queries, queries, queries, need_weights=False, attn_mask=None)[0]
-                pose_queries = spatial_norm(pose_queries)
-                
-                pose_queries = pose_queries + ffn(pose_queries)
-                pose_queries = ffn_norm(pose_queries)
-                pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
-                queries = rearrange(queries, '(b f) (h w d) c -> (b f d) c h w', b=b, f=f, h=h, w=w, d=d)
 
             queries = decoder(queries)
             tokens = decoder(tokens)
@@ -1080,23 +1081,27 @@ class PlanUAutoRegTransformerResidual(BaseModule):
         if pose_tokens is not None:
             pose_tokens = pose_tokens[:, start_frame:mid_frame]
         bs, F, C, H, W, D = res_tokens.shape
-        tokens = rearrange(res_tokens, 'b f c h w d -> b f d h w c')
+        tokens = rearrange(res_tokens, 'b f c h w d -> b f (h w) d c')
         queries = tokens
 
-        queries = queries + self.temporal_embeddings.weight[None, self.offset:F+self.offset, None, None, None, :].expand(
-            bs, -1, D, H, W, -1)
-        tokens = tokens + self.temporal_embeddings.weight[None, :F, None, None, None, :].expand(
-            bs, -1, D, H, W, -1)
+        # NOTE temporal embedding
+        queries = queries + self.temporal_embeddings.weight[None, self.offset:F+self.offset, None, None, :].expand(
+            bs, -1, H*W, D, -1)
+        tokens = tokens + self.temporal_embeddings.weight[None, :F, None, None, :].expand(
+            bs, -1, H*W, D, -1)
+        # NOTE spatial embedding
+        queries = queries + self.spatial_embeddings.weight[None, None, :, None, :].expand(
+            bs, F, -1, D, -1)
+        tokens = tokens + self.spatial_embeddings.weight[None, None, :, None, :].expand(
+            bs, F, -1, D, -1)
+        # NOTE depth embedding
+        queries = queries + self.depth_embeddings.weight[None, None, None, :, :].expand(
+            bs, F, H*W, -1, -1)
+        tokens = tokens + self.depth_embeddings.weight[None, None, None, :, :].expand(
+            bs, F, H*W, -1, -1)
 
-        queries = queries + self.depth_embeddings.weight[None, None, :, None, None, :].expand(
-            bs, F, -1, H, W, -1)
-        tokens = tokens + self.depth_embeddings.weight[None, None, :, None, None, :].expand(
-            bs, F, -1, H, W, -1)
-
-        queries = rearrange(queries, 'b f d h w c -> b f d c h w')
-        tokens = rearrange(tokens, 'b f d h w c -> b f d c h w')
-        # queries = rearrange(queries, 'b f d h w c -> b f h w c d')
-        # tokens = rearrange(tokens, 'b f d h w c -> b f h w c d')
+        queries = rearrange(queries, 'b f (h w) d c -> b f d c h w', h=H, w=W)
+        tokens = rearrange(tokens, 'b f (h w) d c -> b f d c h w', h=H, w=W)
 
         pose_queries = pose_tokens
         pose_queries = pose_queries + self.pose_temporal_embeddings.weight[None, self.offset:F+self.offset, :].expand(
@@ -1109,8 +1114,6 @@ class PlanUAutoRegTransformerResidual(BaseModule):
         encoder_outs_pose_tokens = []
         encoder_outs_pose_queries = []
         
-        # for temporal_attn, encoder, down, pose_attn_en, pose_to_occ_attn_en, pose_en in zip(self.occ_attentions_en, self.encoders, self.downsamples, self.pose_attn_en, self.pose_to_occ_attn_en, self.pose_en):
-        #     b, f, h, w, c, d = tokens.shape
         for occ_attn_en, encoder, down, pose_attn_en, pose_en in zip(self.occ_attentions_en, self.encoders, self.downsamples, self.pose_attn_en, self.pose_en):
             b, f, d, c, h, w = queries.shape
             queries = rearrange(queries, 'b f d c h w -> (b f d) c h w')
@@ -1130,7 +1133,6 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
                 queries = rearrange(queries, '(b f) (h w d) c -> (b f d) c h w', b=b, f=f, h=h, w=w, d=d)
             
-
             for temporal_attn, temporal_norm, spatial_attn, spatial_norm, depth_attn, depth_norm, ffn, ffn_norm in occ_attn_en:
                 queries = rearrange(queries, '(b f d) c h w -> (b h w d) f c', b=b, f=f, d=d)
                 tokens = rearrange(tokens, '(b f d) c h w -> (b h w d) f c', b=b, f=f, d=d)
@@ -1153,7 +1155,6 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 queries = rearrange(queries, '(b f h w) d c -> (b f d) c h w', b=b, f=f, h=h, w=w)
                 tokens = rearrange(tokens, '(b f h w) d c -> (b f d) c h w', b=b, f=f, h=h, w=w)
 
-            
             queries = encoder(queries)
             tokens = encoder(tokens)
             encoder_outs_tokens.append(tokens)
@@ -1202,7 +1203,20 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             pose_queries = torch.cat([pose_queries, encoder_out_pose_queries], dim=2)
             pose_tokens = torch.cat([pose_tokens, encoder_out_pose_tokens], dim=2)
 
-            """ NOTE pose를 먼저 다듬고 queries를 하는 방식을 유지할 것인가? 아니면 symmetric 하게 원래처럼 할 것인가? -> 일단 symmetric을 따라서 구현해보자."""
+            for pose_temporal_attn, pose_temporal_norm, spatial_attn, spatial_norm, ffn, ffn_norm in pose_attn_de:
+                pose_queries = pose_queries + pose_temporal_attn(pose_queries, pose_tokens, pose_tokens, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
+                pose_queries = pose_temporal_norm(pose_queries)
+                pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
+                queries = rearrange(queries, '(b f d) c h w -> (b f) (h w d) c', b=b, f=f, d=d)
+
+                pose_queries = pose_queries + spatial_attn(pose_queries, queries, queries, need_weights=False, attn_mask=None)[0]
+                pose_queries = spatial_norm(pose_queries)
+                
+                pose_queries = pose_queries + ffn(pose_queries)
+                pose_queries = ffn_norm(pose_queries)
+                pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
+                queries = rearrange(queries, '(b f) (h w d) c -> (b f d) c h w', b=b, f=f, h=h, w=w, d=d)
+
             for temporal_attn, temporal_norm, spatial_attn, spatial_norm, depth_attn, depth_norm, ffn, ffn_norm in occ_attn_de:
                 queries = rearrange(queries, '(b f d) c h w -> (b h w d) f c', b=b, f=f, d=d)
                 tokens = rearrange(tokens, '(b f d) c h w -> (b h w d) f c', b=b, f=f, d=d)
@@ -1224,20 +1238,6 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
                 queries = rearrange(queries, '(b f h w) d c -> (b f d) c h w', b=b, f=f, h=h, w=w)
                 tokens = rearrange(tokens, '(b f h w) d c -> (b f d) c h w', b=b, f=f, h=h, w=w)
-            
-            for pose_temporal_attn, pose_temporal_norm, spatial_attn, spatial_norm, ffn, ffn_norm in pose_attn_de:
-                pose_queries = pose_queries + pose_temporal_attn(pose_queries, pose_tokens, pose_tokens, need_weights=False, attn_mask=self.attn_mask[:f, :f])[0]
-                pose_queries = pose_temporal_norm(pose_queries)
-                pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
-                queries = rearrange(queries, '(b f d) c h w -> (b f) (h w d) c', b=b, f=f, d=d)
-
-                pose_queries = pose_queries + spatial_attn(pose_queries, queries, queries, need_weights=False, attn_mask=None)[0]
-                pose_queries = spatial_norm(pose_queries)
-                
-                pose_queries = pose_queries + ffn(pose_queries)
-                pose_queries = ffn_norm(pose_queries)
-                pose_queries = rearrange(pose_queries, '(b f) 1 c -> b f c', b=b, f=f)
-                queries = rearrange(queries, '(b f) (h w d) c -> (b f d) c h w', b=b, f=f, h=h, w=w, d=d)
 
             queries = decoder(queries)
             tokens = decoder(tokens)
