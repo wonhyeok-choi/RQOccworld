@@ -1109,8 +1109,6 @@ class PlanUAutoRegTransformerResidual(BaseModule):
         encoder_outs_pose_tokens = []
         encoder_outs_pose_queries = []
         
-        # for temporal_attn, encoder, down, pose_attn_en, pose_to_occ_attn_en, pose_en in zip(self.occ_attentions_en, self.encoders, self.downsamples, self.pose_attn_en, self.pose_to_occ_attn_en, self.pose_en):
-        #     b, f, h, w, c, d = tokens.shape
         for occ_attn_en, encoder, down, pose_attn_en, pose_en in zip(self.occ_attentions_en, self.encoders, self.downsamples, self.pose_attn_en, self.pose_en):
             b, f, d, c, h, w = queries.shape
             queries = rearrange(queries, 'b f d c h w -> (b f d) c h w')
