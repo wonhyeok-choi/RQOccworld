@@ -260,9 +260,9 @@ class RQVAERes2D(BaseModule):
         return quant, residual_list, code_list, shapes, x.shape
 
     @torch.no_grad()
-    def encode_soft_code(self, x, stochastic):
+    def encode_soft_code(self, x, temp, stochastic):
         feat, shapes = self.forward_encoder(x)
-        residual_list, code_list, soft_code_list = self.vqvae.get_soft_codes(feat, temp=1.0, stochastic=stochastic)
+        residual_list, code_list, soft_code_list = self.vqvae.get_soft_codes(feat, temp=temp, stochastic=stochastic)
         return residual_list, code_list, soft_code_list, shapes, x.shape
     
     def decode(self, quant_sum, shapes, out_shape):

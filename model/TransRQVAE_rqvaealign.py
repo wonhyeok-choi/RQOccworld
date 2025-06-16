@@ -275,7 +275,7 @@ class TransRQVAEalign(BaseModule):
         # NOTE TODO WONHYEOK: self.vae should output three scales top, middel bottom -> encode 함수 vae forward와 동일한 기작으로 수정완료
         # final_quant, residual_list, code_list, soft_code_list, shape, out_shape = self.vae.encode(x, isSoft=is_soft) # [bs*f, H, W, 50], [bs*f, H, W]
         if is_soft:
-            residual_list, code_list, soft_code_list, shapes, out_shape = self.vae.encode_soft_code(x, stochastic=False)
+            residual_list, code_list, soft_code_list, shapes, out_shape = self.vae.encode_soft_code(x, temp=1.0, stochastic=False)
             output_dict['ce_labels_1'] = rearrange(torch.stack(soft_code_list, dim=1)[self.offset:].detach(), 'bf d h w c -> (bf d) c h w') # bfd c h w
         else:
             final_quant, residual_list, code_list, shape, out_shape = self.vae.encode(x) # [bs*f, H, W, 50], [bs*f, H, W]
