@@ -73,10 +73,12 @@ class ResidualVectorQuantizerV3(BaseModule):
             soft_code = F.softmax(-distances / temp, dim=-1)
 
             if stochastic:
+                assert 0
                 soft_code_flat = soft_code.reshape(-1, soft_code.shape[-1])
                 code = torch.multinomial(soft_code_flat, 1)
                 code = code.reshape(*soft_code.shape[:-1])
             else:
+                # assert 0
                 code = distances.argmin(dim=-1)
                 # print("code:", code)
                 # print("code unique:", torch.unique(code))
