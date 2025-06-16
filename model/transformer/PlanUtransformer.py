@@ -907,7 +907,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
         for i_frame in range(num_frames):
             start1 = i_frame * num_tokens
             start2 = start1 + num_tokens if conditional else start1
-            attn_mask[start1: (start1 + num_tokens), start2:] = True
+            pose_attn_mask[start1: (start1 + num_tokens), start2:] = True
         self.register_buffer('pose_attn_mask', pose_attn_mask, False)
 
         # else:
