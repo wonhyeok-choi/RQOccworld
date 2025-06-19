@@ -890,6 +890,13 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 start2 = i_frame + num_tokens if conditional else start1
                 attn_mask[start1: (start1 + num_tokens * 4), start2:] = True
             self.register_buffer('attn_mask', attn_mask, False)
+
+        pose_attn_mask = torch.zeros(num_frames * num_tokens, num_frames * num_tokens, dtype=torch.bool)
+        for i_frame in range(num_frames):
+            start1 = i_frame * num_tokens
+            start2 = start1 + num_tokens if conditional else start1
+            pose_attn_mask[start1: (start1 + num_tokens), start2:] = True
+        self.register_buffer('pose_attn_mask', pose_attn_mask, False)
     
     def forward(self, queries, tokens, pose_tokens):
         bs, F, C, H, W, D = queries.shape
@@ -928,7 +935,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
             # b, f, h, w, c, d = tokens.shape
             
             for pose_temporal_attn, pose_temporal_norm, spatial_attn, spatial_norm, ffn, ffn_norm in pose_attn_en:
-                pose_queries = pose_queries + pose_temporal_attn(pose_queries, pose_tokens, pose_tokens, need_weights=False, attn_mask=self.attn_mask)[0]
+                pose_queries = pose_queries + pose_temporal_attn(pose_queries, pose_tokens, pose_tokens, need_weights=False, attn_mask=self.pose_attn_mask)[0]
                 pose_queries = pose_temporal_norm(pose_queries)
                 pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
                 queries = rearrange(queries, '(b f d) c h w -> (b f) (h w d) c', b=b, f=f, d=d)
@@ -1057,7 +1064,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 tokens = rearrange(tokens, '(b f h w) 1 c -> (b f) c h w', b=b, f=f, h=h, w=w)
             
             for pose_temporal_attn, pose_temporal_norm, spatial_attn, spatial_norm, ffn, ffn_norm in pose_attn_de:
-                pose_queries = pose_queries + pose_temporal_attn(pose_queries, pose_tokens, pose_tokens, need_weights=False, attn_mask=self.attn_mask)[0]
+                pose_queries = pose_queries + pose_temporal_attn(pose_queries, pose_tokens, pose_tokens, need_weights=False, attn_mask=self.pose_attn_mask)[0]
                 pose_queries = pose_temporal_norm(pose_queries)
                 pose_queries = rearrange(pose_queries, 'b f c -> (b f) 1 c')
                 # queries = rearrange(queries, '(b f d) c h w -> (b f) (h w d) c', b=b, f=f, d=d)
