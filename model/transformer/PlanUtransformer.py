@@ -1037,7 +1037,7 @@ class PlanUAutoRegTransformerResidual(BaseModule):
                 # queries = rearrange(queries, '(b f d) c h w -> (b h w d) f c', b=b, f=f, d=d)
                 # tokens = rearrange(tokens, '(b f d) c h w -> (b h w d) f c', b=b, f=f, d=d)
                 queries = rearrange(queries, '(b f d) c h w -> (b h w) (f d) c', b=b, f=f, d=d)
-                tokens = rearrange(tokens, '(b f) c h w -> (b h w) f c', b=b, f=f, d=d)
+                tokens = rearrange(tokens, '(b f) c h w -> (b h w) f c', b=b, f=f)
                 queries = queries + temporal_attn(queries, tokens, tokens, need_weights=False, attn_mask=self.attn_mask)[0]
                 queries = temporal_norm(queries)
 
