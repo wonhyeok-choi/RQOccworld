@@ -264,18 +264,13 @@ class TransRQVAEalign(BaseModule):
     
     ############ TODO : KYUMIN VAR : TODO ############################################################################
     def forward_train_with_plan(self, x, metas):
-        # assert hasattr(self.vae, 'vqvae_top')
-        # assert hasattr(self.vae, 'vqvae_middle') # NOTE TODO WONHYEOK VAERes2D에 vqvae_middle 확인 -> 확인완료
-        # assert hasattr(self.vae, 'vqvae_bottom')
         is_soft = True
         assert hasattr(self, 'pose_encoder')
         bs, f, H, W, D = x.shape # F = 16 = 15 + 1
         assert f == self.num_frames + self.offset
         output_dict = {}
-        # NOTE TODO WONHYEOK: self.vae should output three scales top, middel bottom -> encode 함수 vae forward와 동일한 기작으로 수정완료
-        # final_quant, residual_list, code_list, soft_code_list, shape, out_shape = self.vae.encode(x, isSoft=is_soft) # [bs*f, H, W, 50], [bs*f, H, W]
         if is_soft:
-            residual_list, code_list, soft_code_list, shapes, out_shape = self.vae.encode_soft_code(x, temp=5.0, stochastic=False)
+            residual_list, code_list, soft_code_list, shapes, out_shape = self.vae.encode_soft_code(x, temp=1.0, stochastic=False)
             output_dict['ce_labels_1'] = rearrange(torch.stack(soft_code_list, dim=1)[self.offset:].detach(), 'bf d h w c -> (bf d) c h w') # bfd c h w
         else:
             final_quant, residual_list, code_list, shape, out_shape = self.vae.encode(x) # [bs*f, H, W, 50], [bs*f, H, W]
@@ -288,16 +283,23 @@ class TransRQVAEalign(BaseModule):
 
         z_q_1 = torch.stack(residual_list, dim=-1).sum(-1) # b f c h w
         res_tokens = torch.cumsum(torch.stack(residual_list, dim=-1), dim=-1) # b f c h w d
+
+        '''
+        Transformer input
+        1. queries = res_tokens 
+        2. tokens = z_q_1
+        3. causal : (f*d, f)
+        '''
         
         #############################################################
-        z_q_1, rel_poses = self.transformer_1( # NOTE only FORECAST in this scale rough forecast and refine in upscaled features
-                                        z_q_1[:, :self.num_frames],
+        z_q_forecast, rel_poses = self.transformer_1( 
                                         res_tokens[:, :self.num_frames],
+                                        z_q_1[:, :self.num_frames],
                                         rel_poses_
                                     ) # b f' d 128 50 50
         #############################################################
         
-        output_dict['ce_inputs_1'] = z_q_1.flatten(0, 1).flatten(0, 1) # bfd c h w
+        output_dict['ce_inputs_1'] = z_q_forecast.flatten(0, 1).flatten(0, 1) # bfd c h w
 
         pose_decoded = self.pose_decoder(rel_poses) # [bs, f-1, 3, 2]
 
@@ -310,7 +312,6 @@ class TransRQVAEalign(BaseModule):
         bs, f, H, W, D = x.shape # [1, 16, 200, 200, 16]
         output_dict = {}
         output_dict['target_occs'] = x[:, self.offset:]
-        # NOTE TODO WONHYEOK: self.vae should output three scales top, middel bottom
         final_quant, residual_list, code_list, shapes, out_shape = self.vae.encode(x) # [bs*f, H, W, 50], [bs*f, H, W]
         output_dict['ce_labels_1'] = torch.stack(code_list, dim=1)[self.offset:].flatten(0, 1).detach() # bfd h w
 
@@ -324,16 +325,16 @@ class TransRQVAEalign(BaseModule):
         
         #############################################################
         z_shape = z_q_1[:, :self.num_frames].shape
-        z_q_1, rel_poses = self.transformer_1( # NOTE only FORECAST in this scale rough forecast and refine in upscaled features
-                                        z_q_1[:, :self.num_frames],
+        z_q_forecast, rel_poses = self.transformer_1( 
                                         res_tokens[:, :self.num_frames],
+                                        z_q_1[:, :self.num_frames],
                                         rel_poses_
                                     ) # b f' d 128 50 50
-        idx_1 = torch.argmax(z_q_1.flatten(0, 1).flatten(0, 1), dim=1)
-        quant_1 = self.vae.vqvae.embed_code(idx_1).permute(0, 3, 1, 2).view(*z_shape[:2], 4, *z_shape[2:]) # bf'd 128 50 50
-        quant_final = quant_1.sum(2).flatten(0, 1).permute(0, 2, 3, 1) # b f' c h w
+        idx_ = torch.argmax(z_q_forecast.flatten(0, 1).flatten(0, 1), dim=1)
+        quant_ = self.vae.vqvae.embed_code(idx_).permute(0, 3, 1, 2).view(*z_shape[:2], 4, *z_shape[2:]) # bf'd 128 50 50
+        quant_final = quant_.sum(2).flatten(0, 1).permute(0, 2, 3, 1) # b f' c h w
 
-        output_dict['ce_inputs_1'] = z_q_1.flatten(0, 1).flatten(0, 1) # bdf c h w
+        output_dict['ce_inputs_1'] = z_q_forecast.flatten(0, 1).flatten(0, 1) # bdf c h w
         # output_dict['ce_inputs_2'] = z_q_2.flatten(0, 1) # bdf c h w
         # output_dict['ce_inputs_3'] = z_q_3.flatten(0, 1) # bdf c h w
         # output_dict['ce_inputs_4'] = z_q_4.flatten(0, 1) # bdf c h w
@@ -343,7 +344,6 @@ class TransRQVAEalign(BaseModule):
         output_dict['pose_decoded'] = pose_decoded
         output_dict['output_metas'] = output_metas
 
-        # NOTE TODO WONHYEOK: vae.decode_code midscale process 추가 필요
         logits = self.vae.decode(quant_final, shapes, output_dict['target_occs'].shape)
         # logits = self.vae.decode_code(final_z_q_t, final_z_q_b, shapes_b, output_dict['target_occs'].shape)
         # logits = self.vae.decode_code(idx_t[self.offset:], idx_b[self.offset:], shapes_b, output_dict['target_occs'].shape)
