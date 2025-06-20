@@ -275,9 +275,15 @@ class TransRQVAEalign(BaseModule):
         # NOTE TODO WONHYEOK: self.vae should output three scales top, middel bottom -> encode 함수 vae forward와 동일한 기작으로 수정완료
         # final_quant, residual_list, code_list, soft_code_list, shape, out_shape = self.vae.encode(x, isSoft=is_soft) # [bs*f, H, W, 50], [bs*f, H, W]
         if is_soft:
-            residual_list, code_list, soft_code_list, shapes, out_shape = self.vae.encode_soft_code(x, temp=5.0, stochastic=False)
-            output_dict['ce_labels_1'] = rearrange(torch.stack(soft_code_list, dim=1)[self.offset:].detach(), 'bf d h w c -> (bf d) c h w') # bfd c h w
+            residual_list, code_list, soft_code_list, shapes, out_shape = self.vae.encode_soft_code(x, temp=1.0, stochastic=False)
+            # output_dict['ce_labels_1'] = rearrange(torch.stack(soft_code_list, dim=1)[self.offset:].detach(), 'bf d h w c -> (bf d) c h w') # bfd c h w
+            assert len(code_list) == 4
+            output_dict['ce_labels_1'] = rearrange(soft_code_list[0][self.offset:].detach(), 'bf h w c -> bf c h w')
+            output_dict['ce_labels_2'] = rearrange(soft_code_list[1][self.offset:].detach(), 'bf h w c -> bf c h w')
+            output_dict['ce_labels_3'] = rearrange(soft_code_list[2][self.offset:].detach(), 'bf h w c -> bf c h w')
+            output_dict['ce_labels_4'] = rearrange(soft_code_list[3][self.offset:].detach(), 'bf h w c -> bf c h w')
         else:
+            assert 0
             final_quant, residual_list, code_list, shape, out_shape = self.vae.encode(x) # [bs*f, H, W, 50], [bs*f, H, W]
             output_dict['ce_labels_1'] = torch.stack(code_list, dim=1)[self.offset:].flatten(0, 1).detach() # bfd h w
 
@@ -287,7 +293,8 @@ class TransRQVAEalign(BaseModule):
             residual_list[i] = rearrange(residual_list[i], '(b f) h w c -> b f c h w', b=bs, f=f)
 
         z_q_1 = torch.stack(residual_list, dim=-1).sum(-1) # b f c h w
-        res_tokens = torch.cumsum(torch.stack(residual_list, dim=-1), dim=-1) # b f c h w d
+        # res_tokens = torch.cumsum(torch.stack(residual_list, dim=-1), dim=-1) # b f c h w d
+        res_tokens = torch.stack(residual_list, dim=-1) # b f c h w d
         
         #############################################################
         z_q_1, rel_poses = self.transformer_1( # NOTE only FORECAST in this scale rough forecast and refine in upscaled features
@@ -297,7 +304,11 @@ class TransRQVAEalign(BaseModule):
                                     ) # b f' d 128 50 50
         #############################################################
         
-        output_dict['ce_inputs_1'] = z_q_1.flatten(0, 1).flatten(0, 1) # bfd c h w
+        # output_dict['ce_inputs_1'] = z_q_1.flatten(0, 1).flatten(0, 1) # bfd c h w
+        output_dict['ce_inputs_1'] = z_q_1[:, :, 0].flatten(0, 1) # bf c h w
+        output_dict['ce_inputs_2'] = z_q_1[:, :, 1].flatten(0, 1) # bf c h w
+        output_dict['ce_inputs_3'] = z_q_1[:, :, 2].flatten(0, 1) # bf c h w
+        output_dict['ce_inputs_4'] = z_q_1[:, :, 3].flatten(0, 1) # bf c h w
 
         pose_decoded = self.pose_decoder(rel_poses) # [bs, f-1, 3, 2]
 
@@ -312,7 +323,12 @@ class TransRQVAEalign(BaseModule):
         output_dict['target_occs'] = x[:, self.offset:]
         # NOTE TODO WONHYEOK: self.vae should output three scales top, middel bottom
         final_quant, residual_list, code_list, shapes, out_shape = self.vae.encode(x) # [bs*f, H, W, 50], [bs*f, H, W]
-        output_dict['ce_labels_1'] = torch.stack(code_list, dim=1)[self.offset:].flatten(0, 1).detach() # bfd h w
+        # output_dict['ce_labels_1'] = torch.stack(code_list, dim=1)[self.offset:].flatten(0, 1).detach() # bfd h w
+        assert len(code_list) == 4
+        output_dict['ce_labels_1'] = code_list[0][self.offset:].detach() # bfd h w
+        output_dict['ce_labels_2'] = code_list[1][self.offset:].detach() # bfd h w
+        output_dict['ce_labels_3'] = code_list[2][self.offset:].detach() # bfd h w
+        output_dict['ce_labels_4'] = code_list[3][self.offset:].detach() # bfd h w
 
         rel_poses_, output_metas = self._get_pose_feature(metas, f-self.offset) # sequential poses except for last time stamp
 
@@ -320,7 +336,8 @@ class TransRQVAEalign(BaseModule):
             residual_list[i] = rearrange(residual_list[i], '(b f) h w c -> b f c h w', b=bs, f=f)
 
         z_q_1 = torch.stack(residual_list, dim=-1).sum(-1) # b f c h w
-        res_tokens = torch.cumsum(torch.stack(residual_list, dim=-1), dim=-1) # b f c h w d
+        # res_tokens = torch.cumsum(torch.stack(residual_list, dim=-1), dim=-1) # b f c h w d
+        res_tokens = torch.stack(residual_list, dim=-1) # b f c h w d
         
         #############################################################
         z_shape = z_q_1[:, :self.num_frames].shape
@@ -333,10 +350,11 @@ class TransRQVAEalign(BaseModule):
         quant_1 = self.vae.vqvae.embed_code(idx_1).permute(0, 3, 1, 2).view(*z_shape[:2], 4, *z_shape[2:]) # bf'd 128 50 50
         quant_final = quant_1.sum(2).flatten(0, 1).permute(0, 2, 3, 1) # b f' c h w
 
-        output_dict['ce_inputs_1'] = z_q_1.flatten(0, 1).flatten(0, 1) # bdf c h w
-        # output_dict['ce_inputs_2'] = z_q_2.flatten(0, 1) # bdf c h w
-        # output_dict['ce_inputs_3'] = z_q_3.flatten(0, 1) # bdf c h w
-        # output_dict['ce_inputs_4'] = z_q_4.flatten(0, 1) # bdf c h w
+        # output_dict['ce_inputs_1'] = z_q_1.flatten(0, 1).flatten(0, 1) # bfd c h w
+        output_dict['ce_inputs_1'] = z_q_1[:, :, 0].flatten(0, 1) # bf c h w
+        output_dict['ce_inputs_2'] = z_q_1[:, :, 1].flatten(0, 1) # bf c h w
+        output_dict['ce_inputs_3'] = z_q_1[:, :, 2].flatten(0, 1) # bf c h w
+        output_dict['ce_inputs_4'] = z_q_1[:, :, 3].flatten(0, 1) # bf c h w
 
         pose_decoded = self.pose_decoder(rel_poses) # [bs, f-1, 3, 2]
 
@@ -444,6 +462,7 @@ class TransRQVAEalign(BaseModule):
         rel_poses = self.pose_encoder(rel_poses.float())
         rel_poses_state = rel_poses
         z_q_1_list = [] # for CE_LOSS
+        z_q_1_list_alt = [] # for partial list
         # res_list = [] # NOTE ADDED
         t2 = time.time()
         poses_ = []
@@ -473,6 +492,9 @@ class TransRQVAEalign(BaseModule):
             # temp_z_q_b_idx = self.sample_with_top_k_top_p_(z_q_b_[:, -1:].flatten(0, 1).detach().clone())
 
             z_q_1_ = quant_1.sum(-1)[:, -1:] # b 1 c h w
+            # z_q_1_list_alt.append(quant_1[:, -1:, :, :, :, 0:1].sum(-1)) # b 1 d c h w
+            # z_q_1_list_alt.append(quant_1[:, -1:, :, :, :, 0:2].sum(-1)) # b 1 d c h w
+            # z_q_1_list_alt.append(quant_1[:, -1:, :, :, :, 0:3].sum(-1)) # b 1 d c h w
             res_tokens = torch.cumsum(quant_1, dim=-1)[:, -1:] # b 1 c h w d
             """"""
             # TODO 여기부터 다시 작성할것
@@ -503,6 +525,10 @@ class TransRQVAEalign(BaseModule):
         t3 = time.time()
 
         z_q_1_predict = z_q_1_predict[:, mid_frame:end_frame] 
+        # z_q_1_alt = torch.cat(z_q_1_list, dim=1)[:, :, 0] # b f c h w
+        # z_q_1_alt = torch.cat(z_q_1_list_alt, dim=1) # b f d c h w
+        # print(z_q_1_alt.shape) # MUST BE b f c h w
+        # z_q_1_alt = torch.cat(z_q_1_list, dim=1)[:, :, 0:2].sum(dim=2) # b f c h w
         # res_predict = res_predict[:, mid_frame:end_frame]
         # z_q_t_predict = z_q_t_predict[:, mid_frame:end_frame] 
         # z_q_m_predict = z_q_m_predict[:, mid_frame:end_frame] 
@@ -516,11 +542,13 @@ class TransRQVAEalign(BaseModule):
         output_dict['ce_inputs_1'] = ce_inputs 
         
         z_q_1_predict = z_q_1_predict.flatten(0, 1).permute(0, 2, 3, 1) 
+        # z_q_1_alt = z_q_1_alt.flatten(0, 1).permute(0, 2, 3, 1) 
         # z_q_m_predict = z_q_m_predict.flatten(0, 1).permute(0, 2, 3, 1) 
         # z_q_b_predict = z_q_b_predict.flatten(0, 1).permute(0, 2, 3, 1)
 
         # NOTE TODO WONHYEOK: VAE decode function 확인필요 ->
         z_q_predict = self.vae.decode(z_q_1_predict, shapes, output_dict['target_occs'].shape)
+        # z_q_predict = self.vae.decode(z_q_1_alt, shapes, output_dict['target_occs'].shape)
         # z_q_predict = self.vae.decode(z_q_t_predict, z_q_b_predict, shapes_b, output_dict['target_occs'].shape)
         # z_q_predict = self.vae.decode(origin_z_q_t[:, mid_frame:end_frame].flatten(0,1).permute(0,2,3,1), origin_z_q_b[:, mid_frame:end_frame].flatten(0, 1).permute(0,2,3,1), shapes_b, output_dict['target_occs'].shape)
         output_dict['logits'] = z_q_predict

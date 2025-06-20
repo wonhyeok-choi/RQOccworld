@@ -79,10 +79,28 @@ loss = dict(
     loss_cfgs=[
         dict(
             type='CeLoss_1',
-            weight=1.0,
+            weight=0.1,
             input_dict={
                 'ce_inputs': 'ce_inputs_1',
                 'ce_labels': 'ce_labels_1'}),
+        dict(
+            type='CeLoss_2',
+            weight=0.25,
+            input_dict={
+                'ce_inputs': 'ce_inputs_2',
+                'ce_labels': 'ce_labels_2'}),
+        dict(
+            type='CeLoss_3',
+            weight=0.5,
+            input_dict={
+                'ce_inputs': 'ce_inputs_3',
+                'ce_labels': 'ce_labels_3'}),
+        dict(
+            type='CeLoss_4',
+            weight=1.0,
+            input_dict={
+                'ce_inputs': 'ce_inputs_4',
+                'ce_labels': 'ce_labels_4'}),
         dict(
             type='PlanRegLossLidar',
             weight=0.1, # default is 0.1
@@ -98,6 +116,12 @@ loss = dict(
 loss_input_convertion = dict(
     ce_inputs_1 = 'ce_inputs_1',
     ce_labels_1 = 'ce_labels_1',
+    ce_inputs_2 = 'ce_inputs_2',
+    ce_labels_2 = 'ce_labels_2',
+    ce_inputs_3 = 'ce_inputs_3',
+    ce_labels_3 = 'ce_labels_3',
+    ce_inputs_4 = 'ce_inputs_4',
+    ce_labels_4 = 'ce_labels_4',
     rel_pose ='pose_decoded',
     metas ='output_metas',
 )
